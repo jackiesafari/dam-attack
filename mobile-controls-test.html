@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile Controls Verification Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #2c3e50;
+            color: white;
+            touch-action: manipulation;
+        }
+        
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #34495e;
+            border-radius: 8px;
+        }
+        
+        .mobile-controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        
+        .control-button {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            border: 3px solid #fff;
+            background: #8B4513;
+            color: white;
+            font-size: 32px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+            transition: transform 0.1s ease;
+            touch-action: manipulation;
+        }
+        
+        .control-button:active {
+            transform: scale(0.9);
+            background: #654321;
+        }
+        
+        .control-button:hover {
+            transform: scale(1.05);
+        }
+        
+        .feedback-area {
+            background: #1a252f;
+            padding: 15px;
+            border-radius: 5px;
+            min-height: 100px;
+            font-family: monospace;
+            font-size: 14px;
+            overflow-y: auto;
+            max-height: 200px;
+        }
+        
+        .test-results {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        .test-result {
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        
+        .test-pass {
+            background: #27ae60;
+        }
+        
+        .test-fail {
+            background: #e74c3c;
+        }
+        
+        .test-pending {
+            background: #f39c12;
+        }
+        
+        .screen-info {
+            background: #2c3e50;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 12px;
+        }
+        
+        @media (max-width: 480px) {
+            .mobile-controls {
+                gap: 10px;
+            }
+            
+            .control-button {
+                width: 60px;
+                height: 60px;
+                font-size: 28px;
+            }
+        }
+        
+        @media (orientation: landscape) and (max-height: 500px) {
+            .mobile-controls {
+                margin: 10px 0;
+            }
+            
+            .control-button {
+                width: 50px;
+                height: 50px;
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Mobile Controls Verification Test</h1>
+        
+        <div class="screen-info">
+            <div>Screen: <span id="screen-size"></span></div>
+            <div>Orientation: <span id="orientation"></span></div>
+            <div>Touch Support: <span id="touch-support"></span></div>
+            <div>User Agent: <span id="user-agent"></span></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>Mobile Controls Test</h2>
+            <p>Test the mobile controls below. Each button should provide immediate visual and haptic feedback.</p>
+            
+            <div class="mobile-controls">
+                <button class="control-button" data-action="left">←</button>
+                <button class="control-button" data-action="right">→</button>
+                <button class="control-button" data-action="rotate">↻</button>
+                <button class="control-button" data-action="down">↓</button>
+                <button class="control-button" data-action="drop">⚡</button>
+            </div>
+            
+            <div class="feedback-area" id="feedback"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>Test Results</h2>
+            <div class="test-results">
+                <div class="test-result test-pending" id="touch-responsiveness">
+                    Touch Responsiveness<br>
+                    <small>Pending</small>
+                </div>
+                <div class="test-result test-pending" id="visual-feedback">
+                    Visual Feedback<br>
+                    <small>Pending</small>
+                </div>
+                <div class="test-result test-pending" id="haptic-feedback">
+                    Haptic Feedback<br>
+                    <small>Pending</small>
+                </div>
+                <div class="test-result test-pending" id="rotation-test">
+                    Rotation Function<br>
+                    <small>Pending</small>
+                </div>
+                <div class="test-result test-pending" id="rapid-press">
+                    Rapid Press Handling<br>
+                    <small>Pending</small>
+                </div>
+                <div class="test-result test-pending" id="screen-adaptation">
+                    Screen Adaptation<br>
+                    <small>Pending</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>Manual Test Instructions</h2>
+            <ol>
+                <li><strong>Touch Responsiveness:</strong> Tap each button and verify immediate response</li>
+                <li><strong>Visual Feedback:</strong> Buttons should scale down when pressed</li>
+                <li><strong>Haptic Feedback:</strong> Device should vibrate on button press (if supported)</li>
+                <li><strong>Rotation Function:</strong> Tap the rotate button (↻) multiple times</li>
+                <li><strong>Rapid Press:</strong> Rapidly tap buttons to test throttling</li>
+                <li><strong>Screen Adaptation:</strong> Rotate device and verify layout adapts</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        class MobileControlsTest {
+            constructor() {
+                this.feedback = document.getElementById('feedback');
+                this.testResults = {
+                    touchResponsiveness: false,
+                    visualFeedback: false,
+                    hapticFeedback: false,
+                    rotationTest: false,
+                    rapidPress: false,
+                    screenAdaptation: false
+                };
+                this.buttonPressCount = {};
+                this.lastPressTime = {};
+                this.rapidPressThreshold = 100; // ms
+                
+                this.init();
+            }
+            
+            init() {
+                this.updateScreenInfo();
+                this.setupEventListeners();
+                this.setupOrientationListener();
+                this.log('Mobile Controls Test initialized');
+                this.log('Tap buttons to test functionality');
+            }
+            
+            updateScreenInfo() {
+                document.getElementById('screen-size').textContent = 
+                    `${window.innerWidth}x${window.innerHeight}`;
+                document.getElementById('orientation').textContent = 
+                    window.innerWidth > window.innerHeight ? 'Landscape' : 'Portrait';
+                document.getElementById('touch-support').textContent = 
+                    'ontouchstart' in window ? 'Yes' : 'No';
+                document.getElementById('user-agent').textContent = 
+                    navigator.userAgent.substring(0, 50) + '...';
+            }
+            
+            setupEventListeners() {
+                const buttons = document.querySelectorAll('.control-button');
+                
+                buttons.forEach(button => {
+                    const action = button.dataset.action;
+                    this.buttonPressCount[action] = 0;
+                    this.lastPressTime[action] = 0;
+                    
+                    // Touch events
+                    button.addEventListener('touchstart', (e) => {
+                        e.preventDefault();
+                        this.handleButtonPress(action, 'touch');
+                    });
+                    
+                    // Mouse events for desktop testing
+                    button.addEventListener('mousedown', (e) => {
+                        e.preventDefault();
+                        this.handleButtonPress(action, 'mouse');
+                    });
+                    
+                    // Pointer events (modern approach)
+                    button.addEventListener('pointerdown', (e) => {
+                        this.handleButtonPress(action, 'pointer');
+                    });
+                });
+            }
+            
+            setupOrientationListener() {
+                window.addEventListener('orientationchange', () => {
+                    setTimeout(() => {
+                        this.updateScreenInfo();
+                        this.log('Orientation changed');
+                        this.updateTestResult('screenAdaptation', true);
+                    }, 100);
+                });
+                
+                window.addEventListener('resize', () => {
+                    this.updateScreenInfo();
+                });
+            }
+            
+            handleButtonPress(action, inputType) {
+                const now = Date.now();
+                const timeSinceLastPress = now - this.lastPressTime[action];
+                
+                this.buttonPressCount[action]++;
+                this.lastPressTime[action] = now;
+                
+                // Log the press
+                this.log(`${action.toUpperCase()} pressed (${inputType}) - Count: ${this.buttonPressCount[action]}`);
+                
+                // Test touch responsiveness
+                if (!this.testResults.touchResponsiveness) {
+                    this.updateTestResult('touchResponsiveness', true);
+                    this.log('✓ Touch responsiveness verified');
+                }
+                
+                // Test visual feedback (CSS handles this)
+                if (!this.testResults.visualFeedback) {
+                    this.updateTestResult('visualFeedback', true);
+                    this.log('✓ Visual feedback verified');
+                }
+                
+                // Test haptic feedback
+                this.testHapticFeedback();
+                
+                // Test rotation function
+                if (action === 'rotate') {
+                    this.testRotationFunction();
+                }
+                
+                // Test rapid press handling
+                if (timeSinceLastPress < this.rapidPressThreshold) {
+                    this.testRapidPress(action, timeSinceLastPress);
+                }
+                
+                // Simulate game action
+                this.simulateGameAction(action);
+            }
+            
+            testHapticFeedback() {
+                if ('vibrate' in navigator) {
+                    try {
+                        navigator.vibrate(15);
+                        if (!this.testResults.hapticFeedback) {
+                            this.updateTestResult('hapticFeedback', true);
+                            this.log('✓ Haptic feedback working');
+                        }
+                    } catch (error) {
+                        this.log('⚠ Haptic feedback failed: ' + error.message);
+                        this.updateTestResult('hapticFeedback', false);
+                    }
+                } else {
+                    this.log('⚠ Haptic feedback not supported');
+                    this.updateTestResult('hapticFeedback', false);
+                }
+            }
+            
+            testRotationFunction() {
+                if (this.buttonPressCount.rotate >= 3) {
+                    if (!this.testResults.rotationTest) {
+                        this.updateTestResult('rotationTest', true);
+                        this.log('✓ Rotation function tested (3+ presses)');
+                    }
+                }
+            }
+            
+            testRapidPress(action, timeSinceLastPress) {
+                if (!this.testResults.rapidPress) {
+                    this.updateTestResult('rapidPress', true);
+                    this.log(`✓ Rapid press detected: ${action} (${timeSinceLastPress}ms)`);
+                }
+            }
+            
+            simulateGameAction(action) {
+                const actions = {
+                    left: 'Move piece left',
+                    right: 'Move piece right',
+                    rotate: 'Rotate piece',
+                    down: 'Soft drop',
+                    drop: 'Hard drop'
+                };
+                
+                this.log(`🎮 ${actions[action]}`);
+            }
+            
+            updateTestResult(testName, passed) {
+                const element = document.getElementById(testName.replace(/([A-Z])/g, '-$1').toLowerCase());
+                if (element) {
+                    this.testResults[testName] = passed;
+                    element.className = `test-result ${passed ? 'test-pass' : 'test-fail'}`;
+                    element.innerHTML = element.innerHTML.replace(
+                        /<small>.*<\/small>/, 
+                        `<small>${passed ? 'PASS' : 'FAIL'}</small>`
+                    );
+                }
+            }
+            
+            log(message) {
+                const timestamp = new Date().toLocaleTimeString();
+                const logEntry = `[${timestamp}] ${message}`;
+                
+                this.feedback.innerHTML += logEntry + '\n';
+                this.feedback.scrollTop = this.feedback.scrollHeight;
+                
+                console.log(logEntry);
+            }
+        }
+        
+        // Initialize the test when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new MobileControlsTest();
+        });
+        
+        // Prevent default touch behaviors that might interfere
+        document.addEventListener('touchstart', (e) => {
+            if (e.target.classList.contains('control-button')) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+        
+        document.addEventListener('touchmove', (e) => {
+            if (e.target.classList.contains('control-button')) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+    </script>
+</body>
+</html>

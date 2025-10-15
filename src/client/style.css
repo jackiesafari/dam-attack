@@ -1,0 +1,79 @@
+body {
+  margin: 0;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.87);
+  background: #0A0A0F; /* Match game background */
+  font-family: 'Arial', sans-serif;
+  min-height: 100vh;
+  
+  /* Prevent mobile browser behaviors that cause issues */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: contain;
+  
+  /* Prevent zoom and scrolling issues */
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+}
+
+#game-container {
+  width: 100%;
+  height: 100%;
+  max-width: 100vw;
+  max-height: 100vh;
+  display: block; /* Simplified layout */
+  position: relative;
+  
+  /* Prevent layout issues */
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Simplified game layout - no complex flexbox */
+.game-header,
+.game-main-content,
+.game-board-section,
+.stats-section {
+  /* Remove complex layouts that cause issues */
+  position: relative;
+  width: 100%;
+}
+
+/* Ensure canvas fills container properly */
+canvas {
+  display: block !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+}
+
+/* Prevent any scrolling or overflow issues */
+* {
+  box-sizing: border-box;
+}
+
+/* Mobile-specific fixes */
+@media (max-width: 768px) {
+  body {
+    /* Prevent mobile browser UI from interfering */
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+}

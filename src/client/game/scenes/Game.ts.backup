@@ -1,0 +1,2106 @@
+import { Scene } from 'phaser';
+import * as Phaser from 'phaser';
+import { LeaderboardEntry } from '../../../shared/types/api';
+
+// Game constants
+const BOARD_WIDTH = 10;
+const BOARD_HEIGHT = 20;
+
+// Layout configuration interface
+interface LayoutConfig {
+  type: 'desktop' | 'tablet' | 'mobile';
+  gameBoardX: number;
+  gameBoardY: number;
+  blockSize: number;
+  statsPanelX: number;
+  statsPanelY: number;
+  gameBoardWidth: number;
+  gameBoardHeight: number;
+  statsPanelWidth: number;
+  statsPanelHeight: number;
+  headerHeight: number;
+  fontSize: number;
+  statSpacing: number;
+  beaverX: number;
+  beaverY: number;
+}
+
+// Log piece types (Tetris shapes but themed as logs) - BRIGHTER COLORS
+const PIECES = [
+  // I piece - straight log
+  {
+    shape: [
+      [1, 1, 1, 1]
+    ],
+    color: 0xFF6B35 // Bright orange
+  },
+  // O piece - square log bundle
+  {
+    shape: [
+      [1, 1],
+      [1, 1]
+    ],
+    color: 0x8B4513 // Rich brown
+  },
+  // T piece
+  {
+    shape: [
+      [0, 1, 0],
+      [1, 1, 1]
+    ],
+    color: 0xFF4500 // Red orange
+  },
+  // L piece
+  {
+    shape: [
+      [1, 0],
+      [1, 0],
+      [1, 1]
+    ],
+    color: 0xFFD700 // Gold
+  },
+  // J piece
+  {
+    shape: [
+      [0, 1],
+      [0, 1],
+      [1, 1]
+    ],
+    color: 0xFF6347 // Tomato
+  },
+  // S piece
+  {
+    shape: [
+      [0, 1, 1],
+      [1, 1, 0]
+    ],
+    color: 0xDEB887 // Burlywood
+  },
+  // Z piece
+  {
+    shape: [
+      [1, 1, 0],
+      [0, 1, 1]
+    ],
+    color: 0xF4A460 // Sandy brown
+  }
+];
+
+interface LogPiece {
+  shape: number[][];
+  color: number;
+  x: number;
+  y: number;
+}
+
+interface GameState {
+  board: number[][];
+  currentPiece: LogPiece | null;
+  score: number;
+  level: number;
+  lines: number;
+  dropTime: number;
+  lastTime: number;
+  lastMoveTime: number; // For throttling movement
+  moveDelay: number; // Movement delay based on level
+  lastRotationTime: number; // For rotation throttling
+}
+
+export class Game extends Scene {
+  private gameState: GameState;
+  private graphics: Phaser.GameObjects.Graphics;
+  private scoreText: Phaser.GameObjects.Text;
+  private levelText: Phaser.GameObjects.Text;
+  private linesText: Phaser.GameObjects.Text;
+  private beaver: Phaser.GameObjects.Sprite;
+  private beaverMessage: Phaser.GameObjects.Text;
+  private gameOverText: Phaser.GameObjects.Text;
+  private keys: any;
+  private layoutConfig: LayoutConfig;
+  
+  // Leaderboard properties
+  private leaderboardEntries: LeaderboardEntry[] = [];
+  private leaderboardPanel: Phaser.GameObjects.Container | null = null;
+  private usernameInput: HTMLInputElement | null = null;
+  private showLeaderboard: boolean = false;
+
+  // Mobile controls properties
+  private isMobileDevice: boolean = false;
+  private mobileControls: Phaser.GameObjects.Container | null = null;
+  private mobileButtons: {
+    left?: Phaser.GameObjects.Container;
+    right?: Phaser.GameObjects.Container;
+    rotate?: Phaser.GameObjects.Container;
+    down?: Phaser.GameObjects.Container;
+    drop?: Phaser.GameObjects.Container;
+  } = {};
+
+  // Visual console for mobile debugging
+  private visualConsole: Phaser.GameObjects.Text | null = null;
+  private consoleLogs: string[] = [];
+
+
+  constructor() {
+    super('Game');
+  }
+
+  private investigateRedditContext() {
+    console.log('🔍 Setting up mobile debugging...');
+    
+    // Create visual console for mobile debugging
+    this.createVisualConsole();
+    
+    // Check environment variables
+    console.log('=== ENVIRONMENT VARIABLES ===');
+    if (typeof process !== 'undefined' && process.env) {
+      console.log('Process environment:', process.env);
+      // Look for Reddit-specific env vars
+      const redditEnvVars = Object.keys(process.env).filter(key => 
+        key.toLowerCase().includes('reddit') || 
+        key.toLowerCase().includes('devvit') ||
+        key.toLowerCase().includes('user')
+      );
+      console.log('Reddit/Devvit/User env vars:', redditEnvVars);
+      redditEnvVars.forEach(key => {
+        console.log(`${key}:`, process.env[key]);
+      });
+    } else {
+      console.log('Process.env not available');
+    }
+
+    // Check window objects
+    console.log('=== WINDOW OBJECTS ===');
+    console.log('Window keys:', Object.keys(window));
+    console.log('Reddit context:', (window as any).reddit);
+    console.log('Devvit context:', (window as any).devvit);
+    console.log('Location:', window.location);
+    console.log('Document referrer:', document.referrer);
+
+    // Check for Devvit-specific context
+    console.log('=== DEVVIT CONTEXT ===');
+    const devvit = (window as any).devvit;
+    if (devvit) {
+      console.log('Devvit object keys:', Object.keys(devvit));
+      console.log('Devvit user:', devvit.user);
+      console.log('Devvit post:', devvit.post);
+      console.log('Devvit subreddit:', devvit.subreddit);
+      console.log('Devvit auth:', devvit.auth);
+      console.log('Devvit context:', devvit.context);
+      console.log('Devvit storage:', devvit.storage);
+      console.log('Devvit redis:', devvit.redis);
+      
+      // Store Devvit context for later use
+      this.devvitContext = devvit;
+      this.devvitStorage = devvit.storage || devvit.redis;
+    } else {
+      console.log('No Devvit context found');
+      
+      // Try to access Devvit from global scope
+      if (typeof window !== 'undefined' && (window as any).Devvit) {
+        console.log('Found Devvit in window.Devvit');
+        this.devvitContext = (window as any).Devvit;
+      }
+    }
+
+    // Check Reddit-specific context
+    console.log('=== REDDIT CONTEXT ===');
+    const reddit = (window as any).reddit;
+    if (reddit) {
+      console.log('Reddit object keys:', Object.keys(reddit));
+      console.log('Reddit user:', reddit.user);
+      console.log('Reddit post:', reddit.post);
+      console.log('Reddit subreddit:', reddit.subreddit);
+    } else {
+      console.log('No Reddit context found');
+    }
+
+    // Check URL for Reddit context
+    console.log('=== URL ANALYSIS ===');
+    const url = window.location.href;
+    console.log('Current URL:', url);
+    console.log('URL parameters:', new URLSearchParams(window.location.search));
+    
+    // Try to extract Reddit post ID from URL
+    const redditPostMatch = url.match(/\/r\/\w+\/comments\/([a-zA-Z0-9]+)/);
+    if (redditPostMatch) {
+      console.log('Reddit post ID found:', redditPostMatch[1]);
+    } else {
+      console.log('No Reddit post ID in URL');
+    }
+
+    // Check for Reddit embed parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const embedParams = ['reddit', 'user', 'post', 'subreddit', 'context'];
+    embedParams.forEach(param => {
+      const value = urlParams.get(param);
+      if (value) {
+        console.log(`URL param ${param}:`, value);
+      }
+    });
+
+    // Check document for Reddit-specific elements
+    console.log('=== DOCUMENT ANALYSIS ===');
+    console.log('Document title:', document.title);
+    console.log('Document meta tags:');
+    const metaTags = document.querySelectorAll('meta');
+    metaTags.forEach((meta, index) => {
+      const name = meta.getAttribute('name') || meta.getAttribute('property');
+      const content = meta.getAttribute('content');
+      if (name && (name.includes('reddit') || name.includes('devvit') || name.includes('user'))) {
+        console.log(`Meta ${name}:`, content);
+      }
+    });
+
+    // Check for any global Reddit variables
+    console.log('=== GLOBAL REDDIT VARIABLES ===');
+    const globalKeys = Object.keys(window).filter(key => 
+      key.toLowerCase().includes('reddit') || 
+      key.toLowerCase().includes('devvit') ||
+      key.toLowerCase().includes('user')
+    );
+    globalKeys.forEach(key => {
+      console.log(`Global ${key}:`, (window as any)[key]);
+    });
+
+    console.log('=== INVESTIGATION COMPLETE ===');
+  }
+
+  private createVisualConsole() {
+    // Create a visual console for mobile debugging
+    const { width, height } = this.scale;
+    
+    // Create console background
+    const consoleBg = this.add.graphics();
+    consoleBg.fillStyle(0x000000, 0.8);
+    consoleBg.fillRoundedRect(10, 10, width - 20, 200, 10);
+    consoleBg.lineStyle(2, 0x00FF00);
+    consoleBg.strokeRoundedRect(10, 10, width - 20, 200, 10);
+    
+    // Create console text
+    this.visualConsole = this.add.text(15, 15, 'Reddit Context Investigation:\nLoading...', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: '#00FF00',
+      wordWrap: { width: width - 30 }
+    });
+    
+    // Override console.log to also display in visual console
+    const originalLog = console.log;
+    console.log = (...args) => {
+      originalLog(...args);
+      const message = args.map(arg => 
+        typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+      ).join(' ');
+      
+      this.consoleLogs.push(message);
+      
+      // Keep only last 20 lines
+      if (this.consoleLogs.length > 20) {
+        this.consoleLogs.shift();
+      }
+      
+      if (this.visualConsole) {
+        this.visualConsole.setText(this.consoleLogs.join('\n'));
+      }
+    };
+    
+    // Add close button
+    const closeButton = this.add.text(width - 25, 15, '✕', {
+      fontFamily: 'Arial',
+      fontSize: '16px',
+      color: '#FF0000'
+    }).setInteractive();
+    
+    closeButton.on('pointerdown', () => {
+      consoleBg.destroy();
+      this.visualConsole?.destroy();
+      closeButton.destroy();
+      this.visualConsole = null;
+    });
+  }
+
+  private calculateLayout(width: number, height: number): LayoutConfig {
+    const headerSpace = 80; // Space for title and instructions
+    const margin = 20; // General margin
+    const availableHeight = height - headerSpace - margin * 2;
+    const availableWidth = width - margin * 2;
+
+    // Determine layout type based on width
+    let layoutType: 'desktop' | 'tablet' | 'mobile';
+    if (width > 768) {
+      layoutType = 'desktop';
+    } else if (width > 400) {
+      layoutType = 'tablet';
+    } else {
+      layoutType = 'mobile';
+    }
+
+    // Calculate block size based on available space and layout type
+    let blockSize: number;
+    let gameBoardWidth: number;
+    let gameBoardHeight: number;
+    
+    if (layoutType === 'desktop') {
+      // Desktop: Side-by-side layout, MUCH larger blocks - use more space for game area
+      const gameAreaWidth = availableWidth * 0.75; // Increased from 0.7
+      blockSize = Math.min(45, Math.floor(gameAreaWidth * 0.9 / BOARD_WIDTH)); // Increased max size and percentage
+      gameBoardWidth = BOARD_WIDTH * blockSize;
+      gameBoardHeight = BOARD_HEIGHT * blockSize;
+    } else if (layoutType === 'tablet') {
+      // Tablet: Compact side-by-side layout
+      const gameAreaWidth = availableWidth * 0.7; // Increased from 0.65
+      blockSize = Math.min(38, Math.floor(gameAreaWidth * 0.9 / BOARD_WIDTH)); // Increased max size and percentage
+      gameBoardWidth = BOARD_WIDTH * blockSize;
+      gameBoardHeight = BOARD_HEIGHT * blockSize;
+    } else {
+      // Mobile: Vertical stacking, smaller blocks
+      blockSize = Math.min(28, Math.floor(Math.min(availableWidth * 0.95 / BOARD_WIDTH, availableHeight * 0.7 / BOARD_HEIGHT))); // Increased sizes
+      gameBoardWidth = BOARD_WIDTH * blockSize;
+      gameBoardHeight = BOARD_HEIGHT * blockSize;
+    }
+
+    // Calculate positions based on layout type
+    let gameBoardX: number, gameBoardY: number;
+    let statsPanelX: number, statsPanelY: number;
+    let statsPanelWidth: number, statsPanelHeight: number;
+
+    if (layoutType === 'mobile') {
+      // Vertical stacking for mobile
+      gameBoardX = width / 2;
+      gameBoardY = headerSpace + gameBoardHeight / 2 + margin;
+      
+      statsPanelWidth = Math.min(width * 0.9, 280);
+      statsPanelHeight = Math.min(availableHeight * 0.3, 120);
+      statsPanelX = width / 2;
+      statsPanelY = gameBoardY + gameBoardHeight / 2 + statsPanelHeight / 2 + margin;
+    } else {
+      // Side-by-side layout for desktop and tablet - OPTIMIZED FOR GAMEPLAY
+      // Game area takes 75% of width for desktop, 70% for tablet (increased)
+      const gameAreaWidth = layoutType === 'desktop' ? availableWidth * 0.75 : availableWidth * 0.7;
+      const statsAreaWidth = availableWidth * 0.2; // Even more compact stats panel
+      
+      // Center game area in its allocated space
+      gameBoardX = gameAreaWidth / 2 + margin;
+      gameBoardY = headerSpace + availableHeight / 2;
+      
+      // Position stats panel on the right side
+      statsPanelWidth = statsAreaWidth;
+      statsPanelHeight = Math.min(availableHeight * 0.5, 180); // Even smaller stats panel
+      statsPanelX = gameAreaWidth + statsPanelWidth / 2 + margin * 2;
+      statsPanelY = gameBoardY;
+    }
+
+    // Calculate other properties
+    const fontSize = layoutType === 'desktop' ? 16 : layoutType === 'tablet' ? 14 : 12;
+    const headerHeight = layoutType === 'desktop' ? 35 : 30;
+    const statSpacing = layoutType === 'desktop' ? 25 : layoutType === 'tablet' ? 20 : 15;
+    
+    // Beaver position
+    let beaverX: number, beaverY: number;
+    if (layoutType === 'mobile') {
+      beaverX = statsPanelX;
+      beaverY = statsPanelY + statsPanelHeight / 2 - 20;
+    } else {
+      beaverX = statsPanelX;
+      beaverY = statsPanelY + statsPanelHeight / 2 - 30;
+    }
+
+    return {
+      type: layoutType,
+      gameBoardX,
+      gameBoardY,
+      blockSize,
+      statsPanelX,
+      statsPanelY,
+      gameBoardWidth,
+      gameBoardHeight,
+      statsPanelWidth,
+      statsPanelHeight,
+      headerHeight,
+      fontSize,
+      statSpacing,
+      beaverX,
+      beaverY
+    };
+  }
+
+  create() {
+    // Set background to warm beige like the inspiration
+    this.cameras.main.setBackgroundColor(0xF5DEB3); // Wheat color
+
+    // INVESTIGATION: Check what Reddit context is available in Devvit
+    this.investigateRedditContext();
+
+    // Calculate responsive layout
+    const { width, height } = this.scale;
+    this.layoutConfig = this.calculateLayout(width, height);
+
+    // Detect mobile device
+    this.isMobileDevice = this.detectMobileDevice();
+
+    // Initialize game state
+    this.gameState = {
+      board: Array(BOARD_HEIGHT).fill(null).map(() => Array(BOARD_WIDTH).fill(0)),
+      currentPiece: null,
+      score: 0,
+      level: 1,
+      lines: 0,
+      dropTime: 0,
+      lastTime: 0,
+      lastMoveTime: 0,
+      moveDelay: 150, // Start with 150ms delay for smooth movement
+      lastRotationTime: 0 // For rotation throttling
+    };
+
+    // Create graphics for drawing the game board
+    this.graphics = this.add.graphics();
+
+    // Create UI elements using calculated layout
+    this.createUI();
+
+    // Create beaver character
+    this.createBeaver();
+
+    // Create input controls
+    this.createControls();
+
+    // Create mobile controls if needed
+    if (this.isMobileDevice) {
+      this.createMobileControls();
+    }
+
+    // Initialize leaderboard
+    this.loadLeaderboard();
+
+    // Spawn first piece
+    this.spawnNewPiece();
+    
+    // Add a test piece to make sure rendering works
+    this.gameState.currentPiece = {
+      shape: [[1, 1, 1, 1]], // I piece
+      color: 0xFF0000, // Bright red
+      x: 3,
+      y: 5
+    };
+
+    // Set up game loop
+    this.time.addEvent({
+      delay: 16, // ~60 FPS
+      callback: this.update,
+      callbackScope: this,
+      loop: true
+    });
+
+    // Set up proper resize handling with debouncing
+    this.setupResizeHandling();
+  }
+
+  private setupResizeHandling() {
+    // Use a more robust resize handling approach
+    let resizeTimeout: number | null = null;
+    
+    const handleResize = () => {
+      // Clear any pending resize
+      if (resizeTimeout !== null) {
+        clearTimeout(resizeTimeout);
+      }
+      
+      // Debounce resize events - only handle after 250ms of no resize events
+      resizeTimeout = window.setTimeout(() => {
+        this.handleResizeSmooth();
+        resizeTimeout = null;
+      }, 250);
+    };
+    
+    // Store the handler reference for cleanup
+    this.resizeHandler = handleResize;
+    
+    // Listen to window resize instead of Phaser scale events
+    window.addEventListener('resize', this.resizeHandler);
+    
+    // Also listen to Phaser scale events as backup
+    this.scale.on('resize', this.resizeHandler, this);
+  }
+
+  private resizeHandler: (() => void) | null = null;
+
+  shutdown() {
+    // Clean up resize listeners properly
+    if (this.resizeHandler) {
+      window.removeEventListener('resize', this.resizeHandler);
+      this.scale.off('resize', this.resizeHandler, this);
+      this.resizeHandler = null;
+    }
+    
+    // Clean up mobile controls
+    if (this.mobileControls) {
+      this.mobileControls.destroy();
+      this.mobileControls = null;
+    }
+  }
+
+  private createUI() {
+    const { width, height } = this.scale;
+
+    // Create header with title and instructions
+    this.createHeader(width);
+
+    // Create stats panel using layout config (no game board panel needed)
+    this.createStatsPanel();
+
+    // Game over text (initially hidden)
+    this.gameOverText = this.add.text(width / 2, height / 2, 'Dam Destroyed! 🦫\nClick to rebuild!', {
+      fontFamily: 'Arial Black',
+      fontSize: '28px',
+      color: '#FF0000',
+      backgroundColor: '#FFFFFF',
+      padding: { x: 25, y: 15 },
+      align: 'center',
+      stroke: '#000000',
+      strokeThickness: 3
+    }).setOrigin(0.5).setVisible(false);
+  }
+
+  private createHeader(width: number) {
+    // Add background for header area
+    const headerBg = this.add.graphics();
+    headerBg.fillStyle(0x8B4513, 0.1);
+    headerBg.fillRoundedRect(10, 10, width - 20, 70, 10);
+    headerBg.lineStyle(2, 0x8B4513, 0.3);
+    headerBg.strokeRoundedRect(10, 10, width - 20, 70, 10);
+
+    // Title at the very top with arcade-style styling
+    const title = this.add.text(width / 2, 30, '🦫 BEAVER DAM BUILDER', {
+      fontFamily: 'Arial Black',
+      fontSize: '28px',
+      color: '#FFD700', // Gold color for arcade feel
+      stroke: '#8B4513',
+      strokeThickness: 4,
+      shadow: {
+        offsetX: 3,
+        offsetY: 3,
+        color: '#000000',
+        blur: 4,
+        fill: true
+      }
+    }).setOrigin(0.5);
+    
+    // Add pulsing effect to title
+    this.tweens.add({
+      targets: title,
+      scaleX: 1.05,
+      scaleY: 1.05,
+      duration: 2000,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+
+    // Instructions below title - different for mobile vs desktop
+    const instructionText = this.isMobileDevice 
+      ? 'Use buttons below to play • L: leaderboard'
+      : 'Arrow keys: move, UP: rotate, SPACE: drop, L: leaderboard';
+    
+    this.add.text(width / 2, 55, instructionText, {
+      fontFamily: 'Arial',
+      fontSize: '15px',
+      color: '#8B4513',
+      stroke: '#FFFFFF',
+      strokeThickness: 1,
+      backgroundColor: '#FFF8F0',
+      padding: { x: 12, y: 6 },
+      shadow: {
+        offsetX: 1,
+        offsetY: 1,
+        color: '#000000',
+        blur: 2,
+        fill: true
+      }
+    }).setOrigin(0.5);
+  }
+
+
+  private createStatsPanel() {
+    const config = this.layoutConfig;
+    
+    // Minimal stats panel - just simple text labels, no big background
+    const startY = config.statsPanelY - config.statsPanelHeight/2 + 20;
+    
+    // Simple title
+    this.add.text(config.statsPanelX, startY, '🦫 Stats', {
+      fontFamily: 'Arial Black',
+      fontSize: (config.fontSize + 2) + 'px',
+      color: '#8B4513',
+      stroke: '#FFFFFF',
+      strokeThickness: 1
+    }).setOrigin(0.5);
+
+    // Stats display - compact and clean
+    this.scoreText = this.add.text(
+      config.statsPanelX, 
+      startY + config.statSpacing, 
+      'Score: 0', 
+      {
+        fontFamily: 'Arial',
+        fontSize: config.fontSize + 'px',
+        color: '#FF8C00',
+        backgroundColor: '#FFF8F0',
+        padding: { x: 8, y: 4 }
+      }
+    ).setOrigin(0.5);
+
+    this.levelText = this.add.text(
+      config.statsPanelX, 
+      startY + config.statSpacing * 2, 
+      'Level: 1', 
+      {
+        fontFamily: 'Arial',
+        fontSize: config.fontSize + 'px',
+        color: '#FF8C00',
+        backgroundColor: '#FFF8F0',
+        padding: { x: 8, y: 4 }
+      }
+    ).setOrigin(0.5);
+
+    this.linesText = this.add.text(
+      config.statsPanelX, 
+      startY + config.statSpacing * 3, 
+      'Lines: 0', 
+      {
+        fontFamily: 'Arial',
+        fontSize: config.fontSize + 'px',
+        color: '#FF8C00',
+        backgroundColor: '#FFF8F0',
+        padding: { x: 8, y: 4 }
+      }
+    ).setOrigin(0.5);
+  }
+
+
+  private createBeaver() {
+    const config = this.layoutConfig;
+    
+    // Create beaver at calculated position
+    this.createCompactBeaver(config.beaverX, config.beaverY);
+    
+    // Message font size based on layout type
+    const messageFontSize = config.type === 'desktop' ? '12px' : config.type === 'tablet' ? '11px' : '10px';
+    
+    this.beaverMessage = this.add.text(config.beaverX, config.beaverY + 25, "Perfect stacking!", {
+      fontFamily: 'Arial',
+      fontSize: messageFontSize,
+      color: '#FF8C00',
+      backgroundColor: '#FFF8F0',
+      padding: { x: 6, y: 3 }
+    }).setOrigin(0.5);
+
+    // Cycle through arcade-style motivational messages
+    const getMotivationalMessages = () => {
+      const baseMessages = [
+        "Build my dam!",
+        "I need more logs!",
+        "Perfect stacking!",
+        "Keep it coming!",
+        "You're my hero!",
+        "Don't stop now!",
+        "Almost there!",
+        "I'm counting on you!"
+      ];
+      
+      const fastMessages = [
+        "Build faster!",
+        "Speed up!",
+        "Quick quick!",
+        "I need logs NOW!",
+        "Hurry hurry!",
+        "Time's running out!",
+        "Move those logs!",
+        "Rush rush!"
+      ];
+      
+      const celebrationMessages = [
+        "AMAZING!",
+        "INCREDIBLE!",
+        "YOU'RE THE BEST!",
+        "MY DAM IS PERFECT!",
+        "I LOVE YOU!",
+        "BEST BUILDER EVER!",
+        "YOU'RE MY HERO!",
+        "DAM-TASTIC!"
+      ];
+      
+      // Use different messages based on level and performance
+      if (this.gameState.level > 5) {
+        return celebrationMessages;
+      } else if (this.gameState.level > 3) {
+        return fastMessages;
+      } else {
+        return baseMessages;
+      }
+    };
+    
+    this.time.addEvent({
+      delay: 3000, // Slightly longer delay
+      callback: () => {
+        if (this.beaverMessage) {
+          const messages = getMotivationalMessages();
+          const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+          if (randomMessage) {
+            this.beaverMessage.setText(randomMessage);
+          }
+        }
+      },
+      loop: true
+    });
+  }
+
+  private createCompactBeaver(x: number, y: number) {
+    // Create a more detailed, cheering beaver inspired by the image
+    const beaverContainer = this.add.container(x, y);
+    
+    // Create shadow
+    const shadow = this.add.graphics();
+    shadow.fillStyle(0x000000, 0.2);
+    shadow.fillEllipse(1, 1, 50, 35);
+    
+    // Main beaver body (brown fur)
+    const beaverBody = this.add.graphics();
+    beaverBody.fillStyle(0x8B4513); // Rich brown
+    beaverBody.fillEllipse(0, 0, 45, 32); // Main body
+    
+    // Beaver head
+    const beaverHead = this.add.graphics();
+    beaverHead.fillStyle(0x8B4513);
+    beaverHead.fillEllipse(0, -15, 28, 25); // Head
+    
+    // Lighter belly/chest
+    const belly = this.add.graphics();
+    belly.fillStyle(0xD2B48C); // Tan color
+    belly.fillEllipse(0, -3, 25, 20); // Belly
+    
+    // Beaver muzzle (lighter)
+    const muzzle = this.add.graphics();
+    muzzle.fillStyle(0xF5DEB3); // Wheat color
+    muzzle.fillEllipse(-5, -22, 15, 12); // Muzzle
+    
+    // Large expressive eyes with highlights
+    const leftEye = this.add.graphics();
+    leftEye.fillStyle(0x000000);
+    leftEye.fillCircle(-8, -25, 4); // Left eye
+    leftEye.fillStyle(0xFFFFFF);
+    leftEye.fillCircle(-7, -26, 1.5); // Eye highlight
+    
+    const rightEye = this.add.graphics();
+    rightEye.fillStyle(0x000000);
+    rightEye.fillCircle(3, -25, 4); // Right eye
+    rightEye.fillStyle(0xFFFFFF);
+    rightEye.fillCircle(2, -26, 1.5); // Eye highlight
+    
+    // Beaver nose
+    const nose = this.add.graphics();
+    nose.fillStyle(0x000000);
+    nose.fillEllipse(-2, -18, 4, 3); // Nose
+    
+    // Prominent buck teeth
+    const teeth = this.add.graphics();
+    teeth.fillStyle(0xFFFFFF);
+    teeth.fillRect(-6, -16, 3, 6); // Left tooth
+    teeth.fillRect(-2, -16, 3, 6); // Right tooth
+    
+    // Cheering arms (raised up)
+    const leftArm = this.add.graphics();
+    leftArm.fillStyle(0x8B4513);
+    leftArm.fillCircle(-18, -8, 5); // Left arm raised
+    
+    const rightArm = this.add.graphics();
+    rightArm.fillStyle(0x8B4513);
+    rightArm.fillCircle(18, -8, 5); // Right arm raised
+    
+    // Beaver paws (hands)
+    const leftPaw = this.add.graphics();
+    leftPaw.fillStyle(0x8B4513);
+    leftPaw.fillCircle(-18, -3, 4); // Left paw
+    
+    const rightPaw = this.add.graphics();
+    rightPaw.fillStyle(0x8B4513);
+    rightPaw.fillCircle(18, -3, 4); // Right paw
+    
+    // Flat beaver tail with crosshatch pattern
+    const tail = this.add.graphics();
+    tail.fillStyle(0x654321); // Darker brown for tail
+    tail.fillEllipse(25, 8, 20, 25); // Tail
+    
+    // Add crosshatch pattern to tail
+    tail.lineStyle(1, 0x000000, 0.3);
+    for (let i = 0; i < 3; i++) {
+      tail.moveTo(15 + i * 2, 0);
+      tail.lineTo(35 - i * 2, 20);
+    }
+    for (let i = 0; i < 3; i++) {
+      tail.moveTo(15, 5 + i * 3);
+      tail.lineTo(35, 15 + i * 3);
+    }
+    tail.strokePath();
+    
+    // Group all beaver parts
+    beaverContainer.add([
+      shadow, beaverBody, beaverHead, belly, muzzle, 
+      leftEye, rightEye, nose, teeth,
+      leftArm, rightArm, leftPaw, rightPaw, tail
+    ]);
+    
+    this.beaver = beaverContainer as any; // Type assertion for container
+    
+    // Create cheering animation - side to side movement
+    this.tweens.add({
+      targets: this.beaver,
+      x: x + 8, // Move right
+      duration: 1000,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+    
+    // Add bouncing animation
+    this.tweens.add({
+      targets: this.beaver,
+      y: y - 3,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+    
+    // Add cheering arm wave animation
+    this.tweens.add({
+      targets: [leftArm, rightArm],
+      angle: 10,
+      duration: 600,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+    
+    // Add excited eye blink animation
+    this.time.addEvent({
+      delay: 2000,
+      callback: () => {
+        this.tweens.add({
+          targets: [leftEye, rightEye],
+          scaleY: 0.1,
+          duration: 100,
+          yoyo: true,
+          repeat: 1,
+          ease: 'Back.easeOut'
+        });
+      },
+      loop: true
+    });
+    
+    // Add celebration when level increases
+    this.time.addEvent({
+      delay: 1000,
+      callback: () => {
+        if (this.gameState.level > 1) {
+          // Big celebration animation
+          this.tweens.add({
+            targets: this.beaver,
+            scaleX: 1.2,
+            scaleY: 1.2,
+            angle: 5,
+            duration: 300,
+            yoyo: true,
+            repeat: 2,
+            ease: 'Back.easeOut'
+          });
+        }
+      },
+      loop: true
+    });
+  }
+
+  private createControls() {
+    if (this.input.keyboard) {
+      this.keys = this.input.keyboard.addKeys('W,S,A,D,SPACE,UP,DOWN,LEFT,RIGHT');
+      
+      // Add leaderboard toggle key (L key)
+      this.input.keyboard.on('keydown-L', () => {
+        this.toggleLeaderboard();
+      });
+    }
+  }
+
+  private detectMobileDevice(): boolean {
+    // Only show mobile controls on actual mobile devices
+    // Check if this is a mobile device (not just touch-capable desktop)
+    const { width } = this.scale;
+    const isTouchDevice = this.sys.game.device.input.touch;
+    const isMobileOS = this.sys.game.device.os.android || this.sys.game.device.os.iOS;
+    const isVerySmallScreen = width < 400; // Only very small screens (mobile width)
+    
+    // Show mobile controls ONLY for actual mobile OS devices
+    // This prevents desktop browsers with touch from showing mobile UI
+    return isMobileOS;
+  }
+
+  private handleResizeSmooth() {
+    // Much simpler approach - just update layout without recreating UI
+    const { width, height } = this.scale;
+    
+    // Only recalculate layout - don't change mobile state during gameplay
+    this.layoutConfig = this.calculateLayout(width, height);
+    
+    // Simply update positions of existing elements
+    this.updateUIPositions();
+    
+    // Update mobile controls position if they exist
+    if (this.mobileControls) {
+      const controlY = height - 50;
+      const buttonSize = 60;
+      const buttonSpacing = 10;
+      const totalWidth = (buttonSize * 5) + (buttonSpacing * 4);
+      const startX = (width - totalWidth) / 2;
+      
+      // Update button positions
+      const buttons = [
+        { key: 'left', x: startX },
+        { key: 'right', x: startX + buttonSize + buttonSpacing },
+        { key: 'rotate', x: startX + (buttonSize + buttonSpacing) * 2 },
+        { key: 'down', x: startX + (buttonSize + buttonSpacing) * 3 },
+        { key: 'drop', x: startX + (buttonSize + buttonSpacing) * 4 }
+      ];
+      
+      buttons.forEach((btn, index) => {
+        const button = this.mobileButtons[btn.key as keyof typeof this.mobileButtons];
+        if (button) {
+          button.setPosition(btn.x, controlY);
+        }
+      });
+    }
+  }
+
+
+  private updateUIPositions() {
+    // Update positions of existing UI elements based on new layout
+    const config = this.layoutConfig;
+    
+    if (this.scoreText) {
+      this.scoreText.setPosition(config.statsPanelX, config.statsPanelY - config.statsPanelHeight/2 + 20 + config.statSpacing);
+    }
+    if (this.levelText) {
+      this.levelText.setPosition(config.statsPanelX, config.statsPanelY - config.statsPanelHeight/2 + 20 + config.statSpacing * 2);
+    }
+    if (this.linesText) {
+      this.linesText.setPosition(config.statsPanelX, config.statsPanelY - config.statsPanelHeight/2 + 20 + config.statSpacing * 3);
+    }
+    if (this.beaver) {
+      this.beaver.setPosition(config.beaverX, config.beaverY);
+    }
+    if (this.beaverMessage) {
+      this.beaverMessage.setPosition(config.beaverX, config.beaverY + 25);
+    }
+  }
+
+  private createMobileControls() {
+    const { width, height } = this.scale;
+    
+    // Position controls at the bottom of the screen
+    const controlY = height - 50; // 50px from bottom
+    const buttonSize = 60;
+    const buttonSpacing = 10;
+    const totalWidth = (buttonSize * 5) + (buttonSpacing * 4);
+    const startX = (width - totalWidth) / 2;
+    
+    // Create container for all mobile controls
+    this.mobileControls = this.add.container(0, 0);
+    
+    // Create buttons: [←] [→] [🔄] [⬇] [⚡Drop]
+    const buttons = [
+      { key: 'left', x: startX, label: '←', action: () => this.handleMobileInput('left') },
+      { key: 'right', x: startX + buttonSize + buttonSpacing, label: '→', action: () => this.handleMobileInput('right') },
+      { key: 'rotate', x: startX + (buttonSize + buttonSpacing) * 2, label: '🔄', action: () => this.handleMobileInput('rotate') },
+      { key: 'down', x: startX + (buttonSize + buttonSpacing) * 3, label: '⬇', action: () => this.handleMobileInput('down') },
+      { key: 'drop', x: startX + (buttonSize + buttonSpacing) * 4, label: '⚡', action: () => this.handleMobileInput('drop') }
+    ];
+    
+    buttons.forEach(btn => {
+      const button = this.createMobileButton(btn.x, controlY, buttonSize, btn.label, btn.action);
+      this.mobileButtons[btn.key as keyof typeof this.mobileButtons] = button;
+      this.mobileControls!.add(button);
+    });
+    
+    // Make sure controls are always on top
+    this.mobileControls.setDepth(1000);
+  }
+
+  private createMobileButton(
+    x: number, 
+    y: number, 
+    size: number, 
+    label: string, 
+    action: () => void
+  ): Phaser.GameObjects.Container {
+    const button = this.add.container(x, y);
+    
+    // Button background
+    const bg = this.add.graphics();
+    bg.fillStyle(0x8B4513, 0.8); // Brown with transparency
+    bg.fillRoundedRect(-size/2, -size/2, size, size, 8);
+    bg.lineStyle(2, 0xFFD700, 1); // Gold border
+    bg.strokeRoundedRect(-size/2, -size/2, size, size, 8);
+    
+    // Shadow for depth
+    const shadow = this.add.graphics();
+    shadow.fillStyle(0x000000, 0.3);
+    shadow.fillRoundedRect(-size/2 + 2, -size/2 + 2, size, size, 8);
+    
+    // Button label
+    const text = this.add.text(0, 0, label, {
+      fontFamily: 'Arial Black',
+      fontSize: '24px',
+      color: '#FFFFFF',
+      stroke: '#000000',
+      strokeThickness: 2
+    }).setOrigin(0.5);
+    
+    // Add elements to container
+    button.add([shadow, bg, text]);
+    
+    // Make interactive
+    const hitArea = new Phaser.Geom.Rectangle(-size/2, -size/2, size, size);
+    button.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
+    
+    // Store original position for animation
+    const originalY = y;
+    
+    // Touch/click handlers
+    button.on('pointerdown', () => {
+      // Visual feedback - darken and move down slightly
+      bg.clear();
+      bg.fillStyle(0x654321, 0.9); // Darker brown
+      bg.fillRoundedRect(-size/2, -size/2, size, size, 8);
+      bg.lineStyle(2, 0xFFD700, 1);
+      bg.strokeRoundedRect(-size/2, -size/2, size, size, 8);
+      button.y = originalY + 2;
+      
+      // Execute action
+      action();
+      
+      // Optional: Add haptic feedback if available
+      if (navigator.vibrate) {
+        navigator.vibrate(10);
+      }
+    });
+    
+    button.on('pointerup', () => {
+      // Restore original appearance
+      bg.clear();
+      bg.fillStyle(0x8B4513, 0.8);
+      bg.fillRoundedRect(-size/2, -size/2, size, size, 8);
+      bg.lineStyle(2, 0xFFD700, 1);
+      bg.strokeRoundedRect(-size/2, -size/2, size, size, 8);
+      button.y = originalY;
+    });
+    
+    button.on('pointerout', () => {
+      // Restore if pointer leaves while pressed
+      bg.clear();
+      bg.fillStyle(0x8B4513, 0.8);
+      bg.fillRoundedRect(-size/2, -size/2, size, size, 8);
+      bg.lineStyle(2, 0xFFD700, 1);
+      bg.strokeRoundedRect(-size/2, -size/2, size, size, 8);
+      button.y = originalY;
+    });
+    
+    return button;
+  }
+
+  private handleMobileInput(action: string) {
+    if (!this.gameState.currentPiece) return;
+    
+    const currentTime = this.time.now;
+    
+    switch (action) {
+      case 'left':
+        if (currentTime - this.gameState.lastMoveTime > this.gameState.moveDelay) {
+          if (!this.isCollision(this.gameState.currentPiece, -1, 0)) {
+            this.gameState.currentPiece.x--;
+            this.gameState.lastMoveTime = currentTime;
+          }
+        }
+        break;
+        
+      case 'right':
+        if (currentTime - this.gameState.lastMoveTime > this.gameState.moveDelay) {
+          if (!this.isCollision(this.gameState.currentPiece, 1, 0)) {
+            this.gameState.currentPiece.x++;
+            this.gameState.lastMoveTime = currentTime;
+          }
+        }
+        break;
+        
+      case 'rotate':
+        if (currentTime - this.gameState.lastRotationTime > 200) {
+          const rotated = this.rotatePiece(this.gameState.currentPiece);
+          if (!this.isCollision(rotated, 0, 0)) {
+            this.gameState.currentPiece = rotated;
+            this.gameState.lastRotationTime = currentTime;
+          }
+        }
+        break;
+        
+      case 'down':
+        if (currentTime - this.gameState.lastMoveTime > this.gameState.moveDelay / 2) {
+          if (!this.isCollision(this.gameState.currentPiece, 0, 1)) {
+            this.gameState.currentPiece.y++;
+            this.gameState.score += 1; // Bonus for soft drop
+            this.gameState.lastMoveTime = currentTime;
+          }
+        }
+        break;
+        
+      case 'drop':
+        // Hard drop
+        while (!this.isCollision(this.gameState.currentPiece, 0, 1)) {
+          this.gameState.currentPiece.y++;
+          this.gameState.score += 2; // Bonus for hard drop
+        }
+        // Force immediate placement
+        this.placePiece(this.gameState.currentPiece);
+        break;
+    }
+  }
+
+  private async loadLeaderboard() {
+    try {
+      console.log('Loading leaderboard...');
+      
+      if (this.devvitStorage && this.devvitStorage.get) {
+        // Load from Devvit storage
+        const leaderboardData = await this.devvitStorage.get('tetris_leaderboard');
+        if (leaderboardData) {
+          const parsed = JSON.parse(leaderboardData);
+          this.leaderboardEntries = parsed.map((entry: any) => ({
+            username: entry.username,
+            score: entry.score,
+            level: entry.level,
+            lines: entry.lines,
+            timestamp: entry.timestamp
+          }));
+          console.log('Leaderboard loaded from Devvit:', this.leaderboardEntries);
+        } else {
+          this.leaderboardEntries = [];
+          console.log('No leaderboard data in Devvit storage');
+        }
+      } else {
+        // Fallback to API call
+        const response = await fetch('/api/leaderboard');
+        const data = await response.json();
+        if (data.type === 'leaderboard') {
+          this.leaderboardEntries = data.entries;
+          console.log('Leaderboard loaded from API:', this.leaderboardEntries);
+        }
+      }
+    } catch (error) {
+      console.log('Failed to load leaderboard:', error);
+      // Create some mock data for development
+      this.leaderboardEntries = [
+        { username: "BeaverMaster", score: 15000, level: 8, lines: 45, timestamp: Date.now() - 3600000 },
+        { username: "DamBuilder", score: 12000, level: 7, lines: 38, timestamp: Date.now() - 7200000 },
+        { username: "LogStacker", score: 9500, level: 6, lines: 32, timestamp: Date.now() - 10800000 },
+        { username: "WoodWorker", score: 7800, level: 5, lines: 28, timestamp: Date.now() - 14400000 },
+        { username: "StreamFlow", score: 6200, level: 4, lines: 24, timestamp: Date.now() - 18000000 },
+      ];
+    }
+  }
+
+  private toggleLeaderboard() {
+    this.showLeaderboard = !this.showLeaderboard;
+    if (this.showLeaderboard) {
+      this.createLeaderboardPanel();
+    } else {
+      this.hideLeaderboardPanel();
+    }
+  }
+
+  private createLeaderboardPanel() {
+    if (this.leaderboardPanel) {
+      this.leaderboardPanel.destroy();
+    }
+
+    const { width, height } = this.scale;
+    this.leaderboardPanel = this.add.container(width / 2, height / 2);
+
+    // Background
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.8);
+    bg.fillRoundedRect(-200, -250, 400, 500, 15);
+    bg.lineStyle(3, 0xFFD700);
+    bg.strokeRoundedRect(-200, -250, 400, 500, 15);
+    this.leaderboardPanel.add(bg);
+
+    // Title
+    const title = this.add.text(0, -220, '🏆 DAILY LEADERBOARD', {
+      fontFamily: 'Arial Black',
+      fontSize: '20px',
+      color: '#FFD700',
+      stroke: '#8B4513',
+      strokeThickness: 2
+    }).setOrigin(0.5);
+    this.leaderboardPanel.add(title);
+
+    // Subtitle
+    const subtitle = this.add.text(0, -190, 'Top 10 Dam Builders Today', {
+      fontFamily: 'Arial',
+      fontSize: '14px',
+      color: '#FFFFFF'
+    }).setOrigin(0.5);
+    this.leaderboardPanel.add(subtitle);
+
+    // Leaderboard entries
+    const entries = this.leaderboardEntries.slice(0, 10);
+    entries.forEach((entry, index) => {
+      const rank = index + 1;
+      const y = -150 + (index * 35);
+      
+      // Rank
+      const rankText = this.add.text(-180, y, `${rank}.`, {
+        fontFamily: 'Arial Black',
+        fontSize: '16px',
+        color: rank <= 3 ? '#FFD700' : '#FFFFFF'
+      }).setOrigin(0, 0.5);
+      this.leaderboardPanel!.add(rankText);
+
+      // Username
+      const usernameText = this.add.text(-150, y, entry.username, {
+        fontFamily: 'Arial',
+        fontSize: '14px',
+        color: '#FFFFFF'
+      }).setOrigin(0, 0.5);
+      this.leaderboardPanel!.add(usernameText);
+
+      // Score
+      const scoreText = this.add.text(100, y, entry.score.toLocaleString(), {
+        fontFamily: 'Arial Black',
+        fontSize: '14px',
+        color: '#FFD700'
+      }).setOrigin(1, 0.5);
+      this.leaderboardPanel!.add(scoreText);
+
+      // Level info
+      const levelText = this.add.text(120, y, `L${entry.level}`, {
+        fontFamily: 'Arial',
+        fontSize: '12px',
+        color: '#CCCCCC'
+      }).setOrigin(0, 0.5);
+      this.leaderboardPanel!.add(levelText);
+    });
+
+    // Instructions
+    const instructions = this.add.text(0, 200, 'Press L to close | Press SPACE to submit score', {
+      fontFamily: 'Arial',
+      fontSize: '12px',
+      color: '#CCCCCC'
+    }).setOrigin(0.5);
+    this.leaderboardPanel!.add(instructions);
+
+    // Close button
+    const closeButton = this.add.text(0, 230, 'Close Leaderboard', {
+      fontFamily: 'Arial',
+      fontSize: '14px',
+      color: '#FFD700',
+      backgroundColor: '#8B4513',
+      padding: { x: 15, y: 8 }
+    }).setOrigin(0.5);
+    closeButton.setInteractive();
+    closeButton.on('pointerdown', () => this.hideLeaderboardPanel());
+    this.leaderboardPanel!.add(closeButton);
+  }
+
+  private hideLeaderboardPanel() {
+    this.showLeaderboard = false;
+    if (this.leaderboardPanel) {
+      this.leaderboardPanel.destroy();
+      this.leaderboardPanel = null;
+    }
+  }
+
+  private async submitScore() {
+    if (!this.usernameInput) {
+      this.createUsernameInput();
+      return;
+    }
+
+    const username = this.usernameInput.value.trim();
+    if (!username) {
+      alert('Please enter a username!');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/submit-score', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          type: 'submitScore',
+          username: username,
+          score: this.gameState.score,
+          level: this.gameState.level,
+          lines: this.gameState.lines
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert(`Score submitted! You ranked #${data.rank}!`);
+        this.loadLeaderboard(); // Refresh leaderboard
+      } else {
+        alert(data.message || 'Failed to submit score');
+      }
+    } catch (error) {
+      console.log('Failed to submit score:', error);
+      alert('Score saved locally! (Server unavailable)');
+      // Save locally as fallback
+      this.saveScoreLocally(username);
+    }
+
+    this.hideUsernameInput();
+  }
+
+  private submitScoreMobile() {
+    console.log('🎯🎯🎯 SUBMIT SCORE BUTTON CLICKED! 🎯🎯🎯');
+    console.log('Current score:', this.gameState.score);
+    console.log('Button is working! Touch events are functioning correctly.');
+  }
+
+
+  private showMobileMessage(message: string, type: 'success' | 'error' | 'warning') {
+    const { width, height } = this.scale;
+    
+    // Create message panel
+    const messagePanel = this.add.container(width / 2, height / 2);
+    
+    // Background
+    const bg = this.add.graphics();
+    const colors = {
+      success: 0x00FF00,
+      error: 0xFF0000,
+      warning: 0xFF8C00
+    };
+    
+    bg.fillStyle(0x000000, 0.9);
+    bg.fillRoundedRect(-150, -50, 300, 100, 10);
+    bg.lineStyle(2, colors[type]);
+    bg.strokeRoundedRect(-150, -50, 300, 100, 10);
+    messagePanel.add(bg);
+    
+    // Message text
+    const messageText = this.add.text(0, -20, message, {
+      fontFamily: 'Arial',
+      fontSize: '14px',
+      color: '#FFFFFF',
+      align: 'center',
+      wordWrap: { width: 280 }
+    }).setOrigin(0.5);
+    messagePanel.add(messageText);
+    
+    // Auto-close after 3 seconds
+    this.time.delayedCall(3000, () => {
+      messagePanel.destroy();
+    });
+    
+    // Close on tap
+    messagePanel.setInteractive();
+    messagePanel.on('pointerdown', () => {
+      messagePanel.destroy();
+    });
+  }
+
+  private createUsernameInput() {
+    // Create HTML input overlay
+    this.usernameInput = document.createElement('input');
+    this.usernameInput.type = 'text';
+    this.usernameInput.placeholder = 'Enter your username';
+    this.usernameInput.maxLength = 15;
+    this.usernameInput.style.position = 'absolute';
+    this.usernameInput.style.top = '50%';
+    this.usernameInput.style.left = '50%';
+    this.usernameInput.style.transform = 'translate(-50%, -50%)';
+    this.usernameInput.style.padding = '10px';
+    this.usernameInput.style.fontSize = '16px';
+    this.usernameInput.style.border = '2px solid #8B4513';
+    this.usernameInput.style.borderRadius = '5px';
+    this.usernameInput.style.backgroundColor = '#F5DEB3';
+    this.usernameInput.style.color = '#2F4F2F';
+    this.usernameInput.style.zIndex = '1000';
+    
+    document.body.appendChild(this.usernameInput);
+    this.usernameInput.focus();
+
+    // Handle Enter key
+    this.usernameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        this.submitScore();
+      } else if (e.key === 'Escape') {
+        this.hideUsernameInput();
+      }
+    });
+  }
+
+  private hideUsernameInput() {
+    if (this.usernameInput) {
+      document.body.removeChild(this.usernameInput);
+      this.usernameInput = null;
+    }
+  }
+
+  private saveScoreLocally(username: string) {
+    const localScores = JSON.parse(localStorage.getItem('beaverDamScores') || '[]');
+    localScores.push({
+      username,
+      score: this.gameState.score,
+      level: this.gameState.level,
+      lines: this.gameState.lines,
+      timestamp: Date.now()
+    });
+    
+    // Keep only top 10
+    localScores.sort((a: any, b: any) => b.score - a.score);
+    localScores.splice(10);
+    
+    localStorage.setItem('beaverDamScores', JSON.stringify(localScores));
+  }
+
+  private spawnNewPiece() {
+    const randomPiece = PIECES[Math.floor(Math.random() * PIECES.length)];
+    if (randomPiece && randomPiece.shape && randomPiece.shape[0]) {
+      this.gameState.currentPiece = {
+        shape: randomPiece.shape,
+        color: randomPiece.color,
+        x: Math.floor(BOARD_WIDTH / 2) - Math.floor(randomPiece.shape[0].length / 2),
+        y: 0
+      };
+    }
+
+    console.log('Spawning new piece:', this.gameState.currentPiece); // Debug log
+
+    // Check if game is over
+    if (this.gameState.currentPiece && this.isCollision(this.gameState.currentPiece, 0, 0)) {
+      this.gameOver();
+    }
+  }
+
+  private isCollision(piece: LogPiece, dx: number, dy: number): boolean {
+    const newX = piece.x + dx;
+    const newY = piece.y + dy;
+
+    for (let y = 0; y < piece.shape.length; y++) {
+      const row = piece.shape[y];
+      if (!row) continue;
+      
+      for (let x = 0; x < row.length; x++) {
+        if (row[x]) {
+          const boardX = newX + x;
+          const boardY = newY + y;
+
+          const boardRow = this.gameState.board[boardY];
+          if (boardX < 0 || boardX >= BOARD_WIDTH || 
+              boardY >= BOARD_HEIGHT || 
+              (boardY >= 0 && boardRow && boardRow[boardX])) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  private placePiece(piece: LogPiece) {
+    for (let y = 0; y < piece.shape.length; y++) {
+      const row = piece.shape[y];
+      if (!row) continue;
+      
+      for (let x = 0; x < row.length; x++) {
+        if (row[x]) {
+          const boardY = piece.y + y;
+          const boardX = piece.x + x;
+          const boardRow = this.gameState.board[boardY];
+          if (boardY >= 0 && boardRow) {
+            boardRow[boardX] = piece.color;
+          }
+        }
+      }
+    }
+
+    // Check for completed lines
+    this.checkLines();
+    this.spawnNewPiece();
+  }
+
+  private checkLines() {
+    let linesCleared = 0;
+    
+    for (let y = BOARD_HEIGHT - 1; y >= 0; y--) {
+      const row = this.gameState.board[y];
+      if (row && row.every(cell => cell !== 0)) {
+        // Remove the line
+        this.gameState.board.splice(y, 1);
+        // Add new empty line at top
+        this.gameState.board.unshift(Array(BOARD_WIDTH).fill(0));
+        linesCleared++;
+        y++; // Check the same row again since we shifted
+      }
+    }
+
+    if (linesCleared > 0) {
+      this.gameState.lines += linesCleared;
+      this.gameState.score += linesCleared * 100 * this.gameState.level;
+      this.gameState.level = Math.floor(this.gameState.lines / 10) + 1;
+      
+      // Update movement speed based on level - gets faster as level increases
+      this.gameState.moveDelay = Math.max(50, 150 - (this.gameState.level * 10));
+      
+      this.updateUI();
+    }
+  }
+
+  private rotatePiece(piece: LogPiece): LogPiece {
+    // Get the dimensions of the current shape
+    const rows = piece.shape.length;
+    const firstRow = piece.shape[0];
+    if (!firstRow) {
+      return piece; // Return unchanged if invalid
+    }
+    const cols = firstRow.length;
+    
+    // Create a new rotated shape (transpose and reverse)
+    const rotated = Array(cols).fill(null).map(() => Array(rows).fill(0));
+    
+    for (let y = 0; y < rows; y++) {
+      const row = piece.shape[y];
+      if (!row) continue;
+      
+      for (let x = 0; x < cols; x++) {
+        const rotatedRow = rotated[x];
+        if (rotatedRow) {
+          rotatedRow[rows - 1 - y] = row[x] || 0;
+        }
+      }
+    }
+    
+    return {
+      shape: rotated,
+      color: piece.color,
+      x: piece.x,
+      y: piece.y
+    };
+  }
+
+  override update() {
+    if (!this.gameState.currentPiece) {
+      console.log('No current piece, spawning new one');
+      this.spawnNewPiece();
+      return;
+    }
+
+    const currentTime = this.time.now;
+    const dropInterval = Math.max(1000 - (this.gameState.level * 100), 100);
+    
+    // Debug log every 2 seconds
+    if (Math.floor(currentTime / 2000) !== Math.floor(this.gameState.lastTime / 2000)) {
+      console.log('Game update - piece at:', this.gameState.currentPiece.x, this.gameState.currentPiece.y);
+    }
+
+    // Handle input with throttling for smoother movement
+    
+    if (this.gameState.currentPiece) {
+      if ((this.keys.LEFT.isDown || this.keys.A.isDown) && 
+          currentTime - this.gameState.lastMoveTime > this.gameState.moveDelay) {
+        if (!this.isCollision(this.gameState.currentPiece, -1, 0)) {
+          this.gameState.currentPiece.x--;
+          this.gameState.lastMoveTime = currentTime;
+        }
+      }
+      
+      if ((this.keys.RIGHT.isDown || this.keys.D.isDown) && 
+          currentTime - this.gameState.lastMoveTime > this.gameState.moveDelay) {
+        if (!this.isCollision(this.gameState.currentPiece, 1, 0)) {
+          this.gameState.currentPiece.x++;
+          this.gameState.lastMoveTime = currentTime;
+        }
+      }
+      
+      if ((this.keys.DOWN.isDown || this.keys.S.isDown) && 
+          currentTime - this.gameState.lastMoveTime > this.gameState.moveDelay / 2) { // Faster soft drop
+        if (!this.isCollision(this.gameState.currentPiece, 0, 1)) {
+          this.gameState.currentPiece.y++;
+          this.gameState.score += 1; // Bonus for soft drop
+          this.gameState.lastMoveTime = currentTime;
+        }
+      }
+      
+      // Rotation with manual throttling for reliability
+      if ((this.keys.UP.isDown || this.keys.W.isDown) && 
+          currentTime - this.gameState.lastRotationTime > 200) { // 200ms throttle
+        const rotated = this.rotatePiece(this.gameState.currentPiece);
+        if (!this.isCollision(rotated, 0, 0)) {
+          this.gameState.currentPiece = rotated;
+          this.gameState.lastRotationTime = currentTime;
+        }
+      }
+      
+      if (this.keys.SPACE.isDown) {
+        // Hard drop
+        while (!this.isCollision(this.gameState.currentPiece, 0, 1)) {
+          this.gameState.currentPiece.y++;
+          this.gameState.score += 2; // Bonus for hard drop
+        }
+      }
+    }
+
+    // Auto drop
+    if (currentTime - this.gameState.lastTime > dropInterval && this.gameState.currentPiece) {
+      if (!this.isCollision(this.gameState.currentPiece, 0, 1)) {
+        this.gameState.currentPiece.y++;
+      } else {
+        this.placePiece(this.gameState.currentPiece);
+      }
+      this.gameState.lastTime = currentTime;
+    }
+
+    this.render();
+  }
+
+  private render() {
+    this.graphics.clear();
+
+    // Use layout configuration for consistent positioning
+    const config = this.layoutConfig;
+    const gameBoardX = config.gameBoardX - config.gameBoardWidth / 2;
+    const gameBoardY = config.gameBoardY - config.gameBoardHeight / 2;
+
+    // Draw game board with enhanced water styling
+    this.graphics.lineStyle(4, 0x8B4513); // Thicker brown border
+    this.graphics.fillStyle(0x87CEEB); // Light blue water
+    this.graphics.fillRoundedRect(gameBoardX, gameBoardY, config.gameBoardWidth, config.gameBoardHeight, 10);
+    this.graphics.strokeRoundedRect(gameBoardX, gameBoardY, config.gameBoardWidth, config.gameBoardHeight, 10);
+    
+    // Add water ripple effect
+    this.graphics.lineStyle(1, 0x4682B4, 0.3);
+    for (let i = 0; i < 3; i++) {
+      const rippleY = gameBoardY + (config.gameBoardHeight / 4) * (i + 1);
+      this.graphics.moveTo(gameBoardX + 10, rippleY);
+      this.graphics.lineTo(gameBoardX + config.gameBoardWidth - 10, rippleY);
+    }
+    this.graphics.strokePath();
+    
+    // Add depth shadow
+    this.graphics.fillStyle(0x000000, 0.1);
+    this.graphics.fillRoundedRect(gameBoardX + 2, gameBoardY + 2, config.gameBoardWidth, config.gameBoardHeight, 10);
+
+    // Draw grid lines for better visual clarity
+    this.graphics.lineStyle(1, 0x4169E1, 0.3);
+    for (let x = 0; x <= BOARD_WIDTH; x++) {
+      this.graphics.moveTo(gameBoardX + x * config.blockSize, gameBoardY);
+      this.graphics.lineTo(gameBoardX + x * config.blockSize, gameBoardY + config.gameBoardHeight);
+    }
+    for (let y = 0; y <= BOARD_HEIGHT; y++) {
+      this.graphics.moveTo(gameBoardX, gameBoardY + y * config.blockSize);
+      this.graphics.lineTo(gameBoardX + config.gameBoardWidth, gameBoardY + y * config.blockSize);
+    }
+    this.graphics.strokePath();
+
+    // Draw placed pieces as logs with detailed styling
+    for (let y = 0; y < BOARD_HEIGHT; y++) {
+      const boardRow = this.gameState.board[y];
+      if (!boardRow) continue;
+      
+      for (let x = 0; x < BOARD_WIDTH; x++) {
+        const cellValue = boardRow[x];
+        if (cellValue) {
+          this.drawLogBlock(
+            gameBoardX + x * config.blockSize + 2,
+            gameBoardY + y * config.blockSize + 2,
+            config.blockSize - 4,
+            cellValue
+          );
+        }
+      }
+    }
+
+    // Draw current piece as logs with pulsing effect
+    if (this.gameState.currentPiece) {
+      const piece = this.gameState.currentPiece;
+      
+      console.log('Drawing piece at:', piece.x, piece.y, 'shape:', piece.shape); // Debug log
+      
+      // Add a pulsing effect to make it more noticeable
+      const time = this.time.now * 0.005;
+      const pulse = 0.8 + 0.2 * Math.sin(time);
+      this.graphics.setAlpha(pulse);
+      
+      for (let y = 0; y < piece.shape.length; y++) {
+        const row = piece.shape[y];
+        if (!row) continue;
+        
+        for (let x = 0; x < row.length; x++) {
+          if (row[x]) {
+            const blockX = gameBoardX + (piece.x + x) * config.blockSize + 2;
+            const blockY = gameBoardY + (piece.y + y) * config.blockSize + 2;
+            
+            // Draw shadow first
+            this.graphics.fillStyle(0x000000, 0.5);
+            this.graphics.fillRoundedRect(blockX + 2, blockY + 2, config.blockSize - 4, config.blockSize - 4, 4);
+            
+            // Draw as a log block
+            this.drawLogBlock(blockX, blockY, config.blockSize - 4, piece.color);
+          }
+        }
+      }
+      this.graphics.setAlpha(1); // Reset alpha
+    }
+  }
+
+  private drawLogBlock(x: number, y: number, size: number, color: number) {
+    // Main log body - elongated oval shape to look more like a log
+    this.graphics.fillStyle(color);
+    this.graphics.fillEllipse(x + size/2, y + size/2, size * 0.9, size * 0.7);
+    
+    // Add wood grain texture lines
+    this.graphics.lineStyle(1, color - 0x202020, 0.6);
+    for (let i = 1; i < 4; i++) {
+      const grainY = y + (size * i / 4);
+      this.graphics.moveTo(x + size * 0.2, grainY);
+      this.graphics.lineTo(x + size * 0.8, grainY);
+    }
+    this.graphics.strokePath();
+    
+    // Add bark texture (darker edges)
+    this.graphics.lineStyle(2, color - 0x404040, 0.8);
+    this.graphics.strokeEllipse(x + size/2, y + size/2, size * 0.9, size * 0.7);
+    
+    // Add highlight for 3D effect
+    this.graphics.fillStyle(0xFFFFFF, 0.4);
+    this.graphics.fillEllipse(x + size/2, y + size * 0.3, size * 0.6, size * 0.2);
+    
+    // Add wood knots (small circles)
+    this.graphics.fillStyle(color - 0x303030);
+    this.graphics.fillCircle(x + size * 0.3, y + size * 0.4, size * 0.08);
+    this.graphics.fillCircle(x + size * 0.7, y + size * 0.6, size * 0.06);
+  }
+
+  private updateUI() {
+    this.scoreText.setText(`Score: ${this.gameState.score}`);
+    this.levelText.setText(`Level: ${this.gameState.level}`);
+    this.linesText.setText(`Lines: ${this.gameState.lines}`);
+  }
+
+  private gameOver() {
+    this.gameOverText.setVisible(true);
+    
+    if (this.isMobileDevice) {
+      // Mobile-friendly game over screen
+      this.createMobileGameOverUI();
+    } else {
+      // Desktop game over screen
+      this.createDesktopGameOverUI();
+    }
+    
+    // Handle restart (works for both mobile and desktop)
+    this.input.once('pointerdown', () => {
+      this.scene.restart();
+    });
+  }
+
+  private createDesktopGameOverUI() {
+    // Add score submission option
+    this.add.text(
+      this.gameOverText.x, 
+      this.gameOverText.y + 80, 
+      'Press SPACE to submit your score!', 
+      {
+        fontFamily: 'Arial',
+        fontSize: '18px',
+        color: '#FFD700',
+        backgroundColor: '#8B4513',
+        padding: { x: 15, y: 8 },
+      }
+    ).setOrigin(0.5);
+    
+    // Add leaderboard button
+    this.add.text(
+      this.gameOverText.x, 
+      this.gameOverText.y + 120, 
+      'Press L to view leaderboard', 
+      {
+        fontFamily: 'Arial',
+        fontSize: '16px',
+        color: '#FFFFFF',
+        backgroundColor: '#2F4F2F',
+        padding: { x: 12, y: 6 },
+      }
+    ).setOrigin(0.5);
+    
+    // Handle score submission
+    this.input.keyboard?.once('keydown-SPACE', () => {
+      this.submitScore();
+    });
+  }
+
+  private createMobileGameOverUI() {
+    console.log('📱📱📱 === CREATING MOBILE GAME OVER UI === 📱📱📱');
+    
+    // Add global touch event logger to debug touch issues
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      console.log('🌍 GLOBAL TOUCH DETECTED at:', pointer.x, pointer.y);
+      console.log('Touch world position:', pointer.worldX, pointer.worldY);
+      console.log('Is touch:', pointer.isDown);
+    });
+    
+    // Mobile game over screen with touch buttons
+    const { width, height } = this.scale;
+    console.log('Screen size:', width, 'x', height);
+    
+    // Create mobile game over panel
+    const gameOverPanel = this.add.container(width / 2, height / 2);
+    console.log('Game over panel created at:', width/2, height/2);
+    
+    // Background
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.9);
+    bg.fillRoundedRect(-200, -150, 400, 300, 15);
+    bg.lineStyle(3, 0xFFD700);
+    bg.strokeRoundedRect(-200, -150, 400, 300, 15);
+    gameOverPanel.add(bg);
+    
+    // Title
+    const title = this.add.text(0, -120, 'Game Over!', {
+      fontFamily: 'Arial Black',
+      fontSize: '24px',
+      color: '#FFD700',
+      stroke: '#000000',
+      strokeThickness: 2
+    }).setOrigin(0.5);
+    gameOverPanel.add(title);
+    
+    // Score display
+    const scoreDisplay = this.add.text(0, -80, `Score: ${this.gameState.score}`, {
+      fontFamily: 'Arial',
+      fontSize: '18px',
+      color: '#FFFFFF'
+    }).setOrigin(0.5);
+    gameOverPanel.add(scoreDisplay);
+    
+    // Submit score button with EXTENSIVE LOGGING AND TOUCH FIX
+    console.log('🔵 Creating submit button...');
+    const submitButton = this.add.text(0, -30, '📊 Submit Score', {
+      fontFamily: 'Arial Black',
+      fontSize: '18px',
+      color: '#FFFFFF',
+      backgroundColor: '#8B4513',
+      padding: { x: 25, y: 12 }
+    }).setOrigin(0.5);
+    console.log('🔵 Submit button created at:', submitButton.x, submitButton.y);
+    console.log('🔵 Submit button size:', submitButton.width, 'x', submitButton.height);
+    
+    // CRITICAL FIX: Set explicit hit area for touch events
+    // Phaser text objects need this for reliable touch input!
+    const hitWidth = submitButton.width;
+    const hitHeight = submitButton.height;
+    submitButton.setInteractive(
+      new Phaser.Geom.Rectangle(-hitWidth/2, -hitHeight/2, hitWidth, hitHeight),
+      Phaser.Geom.Rectangle.Contains
+    );
+    console.log('🔵 Submit button interactive hit area set:', hitWidth, 'x', hitHeight);
+    console.log('🔵 Submit button input enabled:', submitButton.input?.enabled);
+    
+    // Make button easier to see when touched
+    submitButton.setStyle({ 
+      backgroundColor: '#8B4513',
+      fontSize: '18px',
+      padding: { x: 25, y: 12 }
+    });
+    
+    // Add ALL event listeners for debugging
+    submitButton.on('pointerover', () => {
+      console.log('👆👆👆 POINTER OVER SUBMIT BUTTON 👆👆👆');
+      submitButton.setStyle({ backgroundColor: '#A0522D' }); // Lighter brown
+      submitButton.setScale(1.05);
+    });
+    
+    submitButton.on('pointerout', () => {
+      console.log('👆 Submit button - POINTER OUT');
+      submitButton.setStyle({ backgroundColor: '#8B4513' }); // Original brown
+      submitButton.setScale(1.0);
+    });
+    
+    submitButton.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      console.log('🔴🔴🔴 === SUBMIT BUTTON CLICKED === 🔴🔴🔴');
+      console.log('SUCCESS! Touch event fired!');
+      console.log('Button click timestamp:', new Date().toISOString());
+      console.log('Pointer position:', pointer.x, pointer.y);
+      console.log('Pointer world position:', pointer.worldX, pointer.worldY);
+      console.log('Button world position:', submitButton.x, submitButton.y);
+      console.log('About to call submitScoreMobile()...');
+      
+      // Disable button to prevent double-clicks
+      submitButton.disableInteractive();
+      console.log('Button disabled to prevent double-tap');
+      
+      // Visual feedback - change color
+      submitButton.setStyle({ backgroundColor: '#654321' }); // Darker brown
+      submitButton.setScale(0.95);
+      
+      // Call the submit method
+      console.log('Calling submitScoreMobile NOW...');
+      this.submitScoreMobile()
+        .then(() => {
+          console.log('✅ submitScoreMobile() completed successfully');
+          this.time.delayedCall(300, () => {
+            console.log('Destroying game over panel...');
+            gameOverPanel.destroy();
+          });
+        })
+        .catch((error: Error) => {
+          console.error('❌ submitScoreMobile() failed:', error);
+          this.time.delayedCall(300, () => {
+            gameOverPanel.destroy();
+          });
+        });
+    });
+    
+    submitButton.on('pointerup', () => {
+      console.log('👆 Submit button - POINTER UP');
+    });
+    
+    console.log('🔵 All event listeners added to submit button');
+    gameOverPanel.add(submitButton);
+    console.log('🔵 Submit button added to panel');
+    console.log('🔵 Panel position:', gameOverPanel.x, gameOverPanel.y);
+    console.log('🔵 Submit button final world position:', 
+      gameOverPanel.x + submitButton.x, 
+      gameOverPanel.y + submitButton.y);
+    
+    // View leaderboard button with TOUCH FIX
+    const leaderboardButton = this.add.text(0, 20, '🏆 View Leaderboard', {
+      fontFamily: 'Arial Black',
+      fontSize: '18px',
+      color: '#FFFFFF',
+      backgroundColor: '#2F4F2F',
+      padding: { x: 25, y: 12 }
+    }).setOrigin(0.5);
+    
+    // Set explicit hit area for touch
+    const lbHitWidth = leaderboardButton.width;
+    const lbHitHeight = leaderboardButton.height;
+    leaderboardButton.setInteractive(
+      new Phaser.Geom.Rectangle(-lbHitWidth/2, -lbHitHeight/2, lbHitWidth, lbHitHeight),
+      Phaser.Geom.Rectangle.Contains
+    );
+    console.log('🔵 Leaderboard button interactive, size:', lbHitWidth, 'x', lbHitHeight);
+    
+    leaderboardButton.on('pointerover', () => {
+      console.log('👆 POINTER OVER LEADERBOARD BUTTON');
+      leaderboardButton.setStyle({ backgroundColor: '#3A5F3A' });
+      leaderboardButton.setScale(1.05);
+    });
+    
+    leaderboardButton.on('pointerout', () => {
+      leaderboardButton.setStyle({ backgroundColor: '#2F4F2F' });
+      leaderboardButton.setScale(1.0);
+    });
+    
+    leaderboardButton.on('pointerdown', () => {
+      console.log('🟢🟢🟢 LEADERBOARD BUTTON CLICKED 🟢🟢🟢');
+      leaderboardButton.disableInteractive();
+      leaderboardButton.setStyle({ backgroundColor: '#1A3F1A' });
+      gameOverPanel.destroy();
+      this.toggleLeaderboard();
+    });
+    gameOverPanel.add(leaderboardButton);
+    
+    // Play again button with TOUCH FIX
+    const playAgainButton = this.add.text(0, 70, '🔄 Play Again', {
+      fontFamily: 'Arial Black',
+      fontSize: '18px',
+      color: '#FFFFFF',
+      backgroundColor: '#FF8C00',
+      padding: { x: 25, y: 12 }
+    }).setOrigin(0.5);
+    
+    // Set explicit hit area for touch
+    const paHitWidth = playAgainButton.width;
+    const paHitHeight = playAgainButton.height;
+    playAgainButton.setInteractive(
+      new Phaser.Geom.Rectangle(-paHitWidth/2, -paHitHeight/2, paHitWidth, paHitHeight),
+      Phaser.Geom.Rectangle.Contains
+    );
+    console.log('🔵 Play Again button interactive, size:', paHitWidth, 'x', paHitHeight);
+    
+    playAgainButton.on('pointerover', () => {
+      console.log('👆 POINTER OVER PLAY AGAIN BUTTON');
+      playAgainButton.setStyle({ backgroundColor: '#FFA500' });
+      playAgainButton.setScale(1.05);
+    });
+    
+    playAgainButton.on('pointerout', () => {
+      playAgainButton.setStyle({ backgroundColor: '#FF8C00' });
+      playAgainButton.setScale(1.0);
+    });
+    
+    playAgainButton.on('pointerdown', () => {
+      console.log('🟡🟡🟡 PLAY AGAIN BUTTON CLICKED 🟡🟡🟡');
+      playAgainButton.disableInteractive();
+      playAgainButton.setStyle({ backgroundColor: '#CC7000' });
+      this.scene.restart();
+    });
+    gameOverPanel.add(playAgainButton);
+    
+    // Close button with TOUCH FIX
+    const closeButton = this.add.text(180, -120, '✕', {
+      fontFamily: 'Arial',
+      fontSize: '24px',
+      color: '#FF0000',
+      backgroundColor: '#000000',
+      padding: { x: 10, y: 6 }
+    }).setOrigin(0.5);
+    
+    // Set explicit hit area for touch - make it bigger for easier tapping
+    const closeHitWidth = Math.max(closeButton.width, 50); // At least 50px wide
+    const closeHitHeight = Math.max(closeButton.height, 50); // At least 50px tall
+    closeButton.setInteractive(
+      new Phaser.Geom.Rectangle(-closeHitWidth/2, -closeHitHeight/2, closeHitWidth, closeHitHeight),
+      Phaser.Geom.Rectangle.Contains
+    );
+    console.log('🔵 Close button interactive, size:', closeHitWidth, 'x', closeHitHeight);
+    
+    closeButton.on('pointerover', () => {
+      console.log('👆 POINTER OVER CLOSE BUTTON');
+      closeButton.setStyle({ backgroundColor: '#330000' });
+      closeButton.setScale(1.1);
+    });
+    
+    closeButton.on('pointerout', () => {
+      closeButton.setStyle({ backgroundColor: '#000000' });
+      closeButton.setScale(1.0);
+    });
+    
+    closeButton.on('pointerdown', () => {
+      console.log('❌❌❌ CLOSE BUTTON CLICKED ❌❌❌');
+      closeButton.disableInteractive();
+      gameOverPanel.destroy();
+    });
+    gameOverPanel.add(closeButton);
+    
+    // Make sure the panel is on top
+    // NOTE: Do NOT call setInteractive() on the panel itself - it blocks button events!
+    gameOverPanel.setDepth(2000);
+    
+    console.log('🟢🟢🟢 Mobile Game Over UI Created Successfully 🟢🟢🟢');
+    console.log('Panel depth:', gameOverPanel.depth);
+    console.log('Panel position:', gameOverPanel.x, gameOverPanel.y);
+    console.log('Submit button interactive:', submitButton.input?.enabled);
+  }
+}

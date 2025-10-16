@@ -1,6 +1,6 @@
 import express from 'express';
-import { InitResponse, IncrementResponse, DecrementResponse, LeaderboardResponse, SubmitScoreRequest, SubmitScoreResponse, LeaderboardEntry } from '../shared/types/api';
-import { redis, createServer, context } from '@devvit/web/server';
+import { InitResponse, IncrementResponse, DecrementResponse, LeaderboardResponse, SubmitScoreResponse, LeaderboardEntry } from '../shared/types/api';
+import { redis, reddit, createServer, context } from '@devvit/web/server';
 import { createPost } from './core/post';
 
 const app = express();
@@ -86,27 +86,105 @@ router.post<{ postId: string }, DecrementResponse | { status: string; message: s
   }
 );
 
-// Leaderboard API endpoints
-router.get('/api/leaderboard', async (_req, res): Promise<void> => {
+// Get Reddit username and current best score from Devvit context
+router.get('/api/reddit-user', async (_req, res): Promise<void> => {
   try {
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-    const leaderboardKey = `leaderboard:${today}`;
+    const { userId } = context;
     
-    // Get today's leaderboard from Redis
-    const leaderboardData = await redis.get(leaderboardKey);
-    let entries: LeaderboardEntry[] = [];
+    if (!userId) {
+      res.status(401).json({
+        status: 'error',
+        message: 'User not authenticated'
+      });
+      return;
+    }
+
+    // Get user info from Reddit API
+    const user = await reddit.getUserById(userId);
     
-    if (leaderboardData) {
-      entries = JSON.parse(leaderboardData);
+    // Check if user has a score on the leaderboard
+    const leaderboardKey = 'dam-attack:leaderboard';
+    const userKey = `reddit_${userId}`;
+    let bestScore = 0;
+    let currentRank = null;
+    
+    try {
+      const allScores = await redis.zRange(leaderboardKey, 0, -1);
+      
+      // Sort by score in descending order (same as leaderboard display)
+      const sortedScores = allScores.sort((a, b) => b.score - a.score);
+      
+      // Find user's best score and rank
+      for (let i = 0; i < sortedScores.length; i++) {
+        const entry = sortedScores[i];
+        if (!entry) continue;
+        
+        try {
+          const userData = JSON.parse(entry.member);
+          if (userData.userKey === userKey) {
+            bestScore = Math.max(bestScore, entry.score);
+            currentRank = i + 1; // 1-based ranking
+          }
+        } catch (parseError) {
+          continue;
+        }
+      }
+    } catch (redisError) {
+      console.warn('Error checking user score:', redisError);
     }
     
-    // Sort by score (highest first) and limit to top 10
-    entries.sort((a, b) => b.score - a.score);
-    entries = entries.slice(0, 10);
+    res.json({
+      username: `u/${user?.username || 'Unknown'}`,
+      authenticated: true,
+      bestScore: Math.floor(bestScore),
+      currentRank
+    });
+  } catch (error) {
+    console.error('Error getting Reddit user:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to get user info'
+    });
+  }
+});
+
+// Leaderboard API endpoints using Redis sorted sets
+router.get('/api/leaderboard', async (_req, res): Promise<void> => {
+  try {
+    const leaderboardKey = 'dam-attack:leaderboard';
+    
+    // Get all scores from Redis sorted set
+    const entries = await redis.zRange(leaderboardKey, 0, -1);
+    
+    // Sort by score in descending order (highest first) and take top 10
+    const sortedEntries = entries
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+    
+    const leaderboard: LeaderboardEntry[] = [];
+    
+    // Parse each entry
+    for (const entry of sortedEntries) {
+      try {
+        // Parse the JSON string stored in Redis
+        const userData = JSON.parse(entry.member);
+        leaderboard.push({
+          username: userData.username || 'Unknown Player',
+          score: Math.floor(entry.score),
+          level: userData.level || 1,
+          lines: userData.lines || 0,
+          timestamp: userData.timestamp || Date.now()
+        });
+      } catch (parseError) {
+        console.error('Failed to parse entry:', entry.member, parseError);
+        // Skip invalid entries
+        continue;
+      }
+    }
     
     const response: LeaderboardResponse = {
       type: 'leaderboard',
-      entries: entries
+      entries: leaderboard
     };
     
     res.json(response);
@@ -121,9 +199,10 @@ router.get('/api/leaderboard', async (_req, res): Promise<void> => {
 
 router.post('/api/submit-score', async (req, res): Promise<void> => {
   try {
-    const { username, score, level, lines } = req.body as SubmitScoreRequest;
+    const { score, level, lines } = req.body;
+    const { userId } = context;
     
-    if (!username || typeof score !== 'number' || typeof level !== 'number' || typeof lines !== 'number') {
+    if (typeof score !== 'number' || typeof level !== 'number' || typeof lines !== 'number') {
       res.status(400).json({
         type: 'submitScore',
         success: false,
@@ -131,44 +210,117 @@ router.post('/api/submit-score', async (req, res): Promise<void> => {
       });
       return;
     }
+
+    let username = 'Anonymous Player';
+    let isRedditUser = false;
     
-    const today = new Date().toISOString().split('T')[0];
-    const leaderboardKey = `leaderboard:${today}`;
+    // Try to get Reddit username with better error handling
+    if (userId) {
+      try {
+        const user = await reddit.getUserById(userId);
+        username = `u/${user?.username || 'Unknown'}`; // Add u/ prefix for Reddit usernames
+        isRedditUser = true;
+        console.log(`Reddit user ${username} submitting score: ${score}`);
+      } catch (authError) {
+        console.warn('Reddit authentication failed:', authError);
+        console.warn('userId available but getUserById failed:', userId);
+        // Still try to use a consistent fallback based on userId
+        username = `Player_${userId.slice(-8)}`;
+      }
+    } else {
+      console.warn('No userId in context, using anonymous submission');
+      console.warn('Context:', { userId: context.userId, postId: context.postId });
+    }
     
-    // Get current leaderboard
-    const leaderboardData = await redis.get(leaderboardKey);
-    let entries: LeaderboardEntry[] = leaderboardData ? JSON.parse(leaderboardData) : [];
+    const leaderboardKey = 'dam-attack:leaderboard';
     
-    // Add new score
-    const newEntry: LeaderboardEntry = {
-      username: username.trim(),
-      score,
-      level,
-      lines,
-      timestamp: Date.now()
-    };
+    // Create unique member identifier for this user
+    // Use userId for Reddit users, or fallback to username for anonymous
+    const userKey = isRedditUser ? `reddit_${userId}` : `anon_${username}`;
     
-    entries.push(newEntry);
+    // Check if user already has a score by getting all scores and searching
+    const existingScores = await redis.zRange(leaderboardKey, 0, -1);
+    let existingScore = 0;
+    let existingEntry = null;
     
-    // Sort by score and keep top 10
-    entries.sort((a, b) => b.score - a.score);
-    entries = entries.slice(0, 10);
+    // Find existing score for this user
+    for (const entry of existingScores) {
+      try {
+        const userData = JSON.parse(entry.member);
+        if (userData.userKey === userKey) {
+          existingScore = entry.score;
+          existingEntry = entry.member;
+          break;
+        }
+      } catch (parseError) {
+        // Skip invalid entries
+        continue;
+      }
+    }
     
-    // Save back to Redis
-    await redis.set(leaderboardKey, JSON.stringify(entries));
+    // Only update if this is a better score
+    if (score > existingScore) {
+      // Remove old entry if it exists
+      if (existingEntry) {
+        await redis.zRem(leaderboardKey, [existingEntry]);
+      }
+      
+      // Create new member data with user key for uniqueness
+      const memberData = JSON.stringify({
+        username,
+        level,
+        lines,
+        timestamp: Date.now(),
+        userKey,
+        isRedditUser
+      });
+      
+      // Add new score to sorted set
+      await redis.zAdd(leaderboardKey, { member: memberData, score });
+      
+      console.log(`Score updated for ${username}: ${existingScore} -> ${score}`);
+    } else {
+      console.log(`Score not updated for ${username}: ${score} <= ${existingScore}`);
+    }
     
-    // Find player's rank
-    const rank = entries.findIndex(entry => 
-      entry.username === newEntry.username && 
-      entry.score === newEntry.score && 
-      entry.timestamp === newEntry.timestamp
-    ) + 1;
+    // Get user's current rank (1-based) - sort by score first like the leaderboard
+    const currentScores = await redis.zRange(leaderboardKey, 0, -1);
+    let userRank = null;
+    
+    // Sort by score in descending order (same as leaderboard display)
+    const sortedScores = currentScores.sort((a, b) => b.score - a.score);
+    
+    for (let i = 0; i < sortedScores.length; i++) {
+      const entry = sortedScores[i];
+      if (!entry) continue;
+      try {
+        const userData = JSON.parse(entry.member);
+        if (userData.userKey === userKey) {
+          userRank = i + 1; // 1-based ranking
+          break;
+        }
+      } catch (parseError) {
+        continue;
+      }
+    }
+    
+    // Get total number of players
+    const totalPlayers = await redis.zCard(leaderboardKey);
+    
+    let message = 'Score submitted successfully!';
+    if (userRank !== null) {
+      if (userRank <= 10) {
+        message = `Congratulations ${username}! You ranked #${userRank} out of ${totalPlayers} players!`;
+      } else {
+        message = `${username}, you ranked #${userRank} out of ${totalPlayers} players!`;
+      }
+    }
     
     const response: SubmitScoreResponse = {
       type: 'submitScore',
       success: true,
-      rank: rank,
-      message: rank <= 10 ? `Congratulations! You ranked #${rank}!` : 'Score saved!'
+      rank: userRank || 0,
+      message
     };
     
     res.json(response);
@@ -177,7 +329,86 @@ router.post('/api/submit-score', async (req, res): Promise<void> => {
     res.status(500).json({
       type: 'submitScore',
       success: false,
-      message: 'Failed to submit score'
+      message: 'Failed to submit score. Please try again.'
+    });
+  }
+});
+
+router.post('/api/submit-anonymous', async (req, res): Promise<void> => {
+  try {
+    const { score, level, lines } = req.body;
+    
+    if (typeof score !== 'number' || typeof level !== 'number' || typeof lines !== 'number') {
+      res.status(400).json({
+        type: 'submitScore',
+        success: false,
+        message: 'Invalid score data provided'
+      });
+      return;
+    }
+
+    const leaderboardKey = 'dam-attack:leaderboard';
+    
+    // Create unique anonymous ID that persists across sessions
+    const anonymousId = `anon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const userKey = anonymousId;
+    
+    // Create anonymous member data
+    const memberData = JSON.stringify({
+      username: 'Anonymous',
+      level,
+      lines,
+      timestamp: Date.now(),
+      isAnonymous: true,
+      userKey,
+      isRedditUser: false
+    });
+    
+    // Add score to sorted set (each anonymous submission is unique)
+    await redis.zAdd(leaderboardKey, { member: memberData, score });
+    
+    // Get rank for this anonymous submission by manually calculating (sorted by score)
+    const allScores = await redis.zRange(leaderboardKey, 0, -1);
+    let userRank = null;
+    
+    // Sort by score in descending order (same as leaderboard display)
+    const sortedScores = allScores.sort((a, b) => b.score - a.score);
+    
+    for (let i = 0; i < sortedScores.length; i++) {
+      const entry = sortedScores[i];
+      if (!entry) continue;
+      if (entry.member === memberData) {
+        userRank = i + 1; // 1-based ranking
+        break;
+      }
+    }
+    
+    // Get total number of players
+    const totalPlayers = await redis.zCard(leaderboardKey);
+    
+    let message = 'Score submitted anonymously!';
+    if (userRank !== null) {
+      if (userRank <= 10) {
+        message = `Anonymous score ranked #${userRank} out of ${totalPlayers} players!`;
+      } else {
+        message = `Anonymous score ranked #${userRank} out of ${totalPlayers} players!`;
+      }
+    }
+    
+    const response: SubmitScoreResponse = {
+      type: 'submitScore',
+      success: true,
+      rank: userRank || 0,
+      message
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Error submitting anonymous score:', error);
+    res.status(500).json({
+      type: 'submitScore',
+      success: false,
+      message: 'Failed to submit score. Please try again.'
     });
   }
 });

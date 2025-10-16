@@ -93,7 +93,9 @@ export class Game extends Scene {
   private lastTime = 0;
   
   // Beaver character
-  private beaver!: Phaser.GameObjects.Graphics;
+  private beaver!: Phaser.GameObjects.Image;
+  private beaverContainer!: Phaser.GameObjects.Container;
+  private beaverAnimation!: Phaser.Tweens.Tween;
   private beaverMessages: string[] = [
     "Great job building!",
     "Keep stacking those logs!",
@@ -103,7 +105,26 @@ export class Game extends Scene {
     "Dam good job!",
     "Building like a pro!"
   ];
+  private encouragementMessages: string[] = [
+    "You're doing great!",
+    "Keep going, builder!",
+    "I believe in you!",
+    "Every piece counts!",
+    "You've got this!",
+    "Nice placement!",
+    "Building skills improving!",
+    "Don't give up!",
+    "The dam needs you!",
+    "Perfect spot for that log!",
+    "You're getting better!",
+    "Keep those logs coming!",
+    "I'm cheering for you!",
+    "Great effort!",
+    "You're learning fast!"
+  ];
   private messageText!: Phaser.GameObjects.Text;
+  private lastEncouragementTime: number = 0;
+  private piecesPlaced: number = 0;
   
   private gameState = {
     score: 0,
@@ -145,6 +166,12 @@ export class Game extends Scene {
     // Start the game
     this.spawnNewPiece();
     this.lastTime = this.time.now;
+    this.lastEncouragementTime = this.time.now;
+    
+    // Initial welcome message from beaver
+    this.time.delayedCall(1000, () => {
+      this.showRandomEncouragement("Welcome, builder! Let's build an amazing dam together!");
+    });
   }
 
   private initializeBoard() {
@@ -185,19 +212,49 @@ export class Game extends Scene {
   }
 
   private createBeaver() {
-    // Create clean pixel art beaver without background issues
-    this.beaver = this.add.graphics() as any;
-    this.drawSmallBeaver(100, 300);
+    // Create beaver container for positioning
+    this.beaverContainer = this.add.container(120, 300);
     
-    // Beaver message
-    this.messageText = this.add.text(50, 380, '', {
-      fontFamily: 'Arial',
-      fontSize: '14px',
+    // Create neon frame for beaver (similar to main menu)
+    const frameSize = 120;
+    const frame = this.add.graphics();
+    
+    // Outer neon glow
+    frame.lineStyle(4, 0x00FFFF, 0.8);
+    frame.strokeRoundedRect(-frameSize/2, -frameSize/2, frameSize, frameSize, 8);
+    
+    // Inner bright line
+    frame.lineStyle(2, 0xFFFFFF, 1);
+    frame.strokeRoundedRect(-frameSize/2 + 6, -frameSize/2 + 6, frameSize - 12, frameSize - 12, 6);
+    
+    this.beaverContainer.add(frame);
+    
+    // Add the beaver image
+    try {
+      this.beaver = this.add.image(0, 0, 'beaverlogo');
+      this.beaver.setOrigin(0.5, 0.5);
+      this.beaver.setScale(0.25); // Smaller than main menu but still prominent
+      this.beaverContainer.add(this.beaver);
+      
+      // Start idle animation - gentle side-to-side movement
+      this.startBeaverIdleAnimation();
+      
+    } catch (error) {
+      console.log('Error loading beaver image:', error);
+      // Fallback to enhanced pixel art if image fails
+      this.createPixelArtBeaver();
+    }
+    
+    // Beaver message with better positioning
+    this.messageText = this.add.text(120, 380, '', {
+      fontFamily: 'Arial Bold',
+      fontSize: '12px',
       color: '#FFFF00',
       stroke: '#FF00FF',
       strokeThickness: 1,
-      wordWrap: { width: 180 }
-    });
+      wordWrap: { width: 200 },
+      align: 'center'
+    }).setOrigin(0.5, 0);
   }
 
   private createHeader() {
@@ -331,23 +388,33 @@ export class Game extends Scene {
   private createMobileControls() {
     const { width, height } = this.scale;
     
-    this.mobileControls = this.add.container(0, height - 60);
+    // Create controls container positioned to avoid blocking game area
+    this.mobileControls = this.add.container(0, 0);
     
-    const buttonSize = 70;
-    const buttonSpacing = 15;
-    const totalWidth = (buttonSize * 5) + (buttonSpacing * 4);
-    const startX = (width - totalWidth) / 2;
+    const buttonSize = 60;
+    const buttonSpacing = 10;
+    const sideMargin = 20; // Distance from screen edge
     
-    const buttons = [
-      { key: 'left', symbol: '←', x: startX },
-      { key: 'right', symbol: '→', x: startX + buttonSize + buttonSpacing },
-      { key: 'rotate', symbol: '↻', x: startX + (buttonSize + buttonSpacing) * 2 },
-      { key: 'down', symbol: '↓', x: startX + (buttonSize + buttonSpacing) * 3 },
-      { key: 'drop', symbol: '⬇', x: startX + (buttonSize + buttonSpacing) * 4 }
+    // Left side controls (movement)
+    const leftControlsY = height - 200; // Position in lower half
+    const leftButtonPositions = [
+      { key: 'left', symbol: '←', x: sideMargin, y: leftControlsY },
+      { key: 'down', symbol: '↓', x: sideMargin, y: leftControlsY + buttonSize + buttonSpacing }
     ];
     
-    buttons.forEach(btn => {
-      const button = this.createMobileButton(btn.symbol, btn.x, 0);
+    // Right side controls (rotation and drop)
+    const rightControlsY = height - 200; // Same vertical position as left
+    const rightButtonPositions = [
+      { key: 'right', symbol: '→', x: width - sideMargin - buttonSize, y: rightControlsY },
+      { key: 'rotate', symbol: '↻', x: width - sideMargin - buttonSize, y: rightControlsY + buttonSize + buttonSpacing },
+      { key: 'drop', symbol: '⬇', x: width - sideMargin - buttonSize, y: rightControlsY + (buttonSize + buttonSpacing) * 2 }
+    ];
+    
+    // Combine all button positions
+    const allButtons = [...leftButtonPositions, ...rightButtonPositions];
+    
+    allButtons.forEach(btn => {
+      const button = this.createMobileButton(btn.symbol, btn.x, btn.y);
       this.mobileControls!.add(button);
       
       button.on('pointerdown', () => {
@@ -489,9 +556,14 @@ export class Game extends Scene {
       }
     }
     
+    this.piecesPlaced++;
     this.clearLines();
     this.spawnNewPiece();
-    this.showBeaverEncouragement();
+    
+    // Show encouragement for pieces placed (not just line clears)
+    if (this.piecesPlaced % 5 === 0) {
+      this.showRandomEncouragement();
+    }
   }
 
   private clearLines() {
@@ -526,6 +598,13 @@ export class Game extends Scene {
       }
       
       this.updateScoreDisplay();
+      
+      // Beaver reactions based on lines cleared
+      if (linesCleared >= 4) {
+        this.beaverReactToTetris();
+      } else {
+        this.showBeaverEncouragement();
+      }
     }
   }
 
@@ -533,20 +612,127 @@ export class Game extends Scene {
     const message = this.beaverMessages[Math.floor(Math.random() * this.beaverMessages.length)];
     this.messageText.setText(message);
     
-    // Animate beaver
+    // Stop idle animation temporarily
+    if (this.beaverAnimation) {
+      this.beaverAnimation.pause();
+    }
+    
+    // Excited celebration animation
     this.tweens.add({
-      targets: this.beaver,
+      targets: this.beaverContainer,
       scaleX: 1.2,
       scaleY: 1.2,
-      duration: 200,
+      duration: 150,
       yoyo: true,
-      ease: 'Power2'
+      repeat: 2,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        // Resume idle animation
+        if (this.beaverAnimation) {
+          this.beaverAnimation.resume();
+        }
+      }
     });
     
-    // Clear message after 2 seconds
-    this.time.delayedCall(2000, () => {
+    // Bounce animation
+    this.tweens.add({
+      targets: this.beaverContainer,
+      y: '-=15',
+      duration: 200,
+      yoyo: true,
+      ease: 'Bounce.easeOut'
+    });
+    
+    // Clear message after 3 seconds
+    this.time.delayedCall(3000, () => {
       this.messageText.setText('');
     });
+  }
+
+  private beaverReactToTetris() {
+    // Special reaction for clearing multiple lines (Tetris)
+    this.messageText.setText('TETRIS! Amazing dam building!');
+    
+    // Stop idle animation
+    if (this.beaverAnimation) {
+      this.beaverAnimation.pause();
+    }
+    
+    // Super excited animation
+    this.tweens.add({
+      targets: this.beaverContainer,
+      angle: 360,
+      duration: 800,
+      ease: 'Power2.easeInOut'
+    });
+    
+    this.tweens.add({
+      targets: this.beaverContainer,
+      scaleX: 1.5,
+      scaleY: 1.5,
+      duration: 300,
+      yoyo: true,
+      repeat: 3,
+      ease: 'Elastic.easeOut',
+      onComplete: () => {
+        // Resume idle animation
+        if (this.beaverAnimation) {
+          this.beaverAnimation.resume();
+        }
+      }
+    });
+    
+    // Clear message after 4 seconds
+    this.time.delayedCall(4000, () => {
+      this.messageText.setText('');
+    });
+  }
+
+  private showRandomEncouragement(customMessage?: string): void {
+    const currentTime = this.time.now;
+    
+    // Don't spam messages - at least 3 seconds between encouragements
+    if (currentTime - this.lastEncouragementTime < 3000 && !customMessage) {
+      return;
+    }
+    
+    this.lastEncouragementTime = currentTime;
+    
+    const message = customMessage || this.encouragementMessages[Math.floor(Math.random() * this.encouragementMessages.length)];
+    this.messageText.setText(message);
+    
+    // Gentle encouraging animation (less dramatic than line clear celebration)
+    if (this.beaverAnimation) {
+      this.beaverAnimation.pause();
+    }
+    
+    this.tweens.add({
+      targets: this.beaverContainer,
+      scaleX: 1.1,
+      scaleY: 1.1,
+      duration: 300,
+      yoyo: true,
+      ease: 'Sine.easeInOut',
+      onComplete: () => {
+        if (this.beaverAnimation) {
+          this.beaverAnimation.resume();
+        }
+      }
+    });
+    
+    // Clear message after 2.5 seconds
+    this.time.delayedCall(2500, () => {
+      this.messageText.setText('');
+    });
+  }
+
+  private checkForTimedEncouragement(): void {
+    const currentTime = this.time.now;
+    
+    // Show encouragement every 15 seconds if no other messages
+    if (currentTime - this.lastEncouragementTime > 15000 && this.messageText.text === '') {
+      this.showRandomEncouragement();
+    }
   }
 
   private movePiece(dx: number, dy: number): boolean {
@@ -607,10 +793,13 @@ export class Game extends Scene {
 
   private gameOver() {
     this.isGameOver = true;
-    this.messageText.setText('Game Over! The dam is complete!');
+    this.messageText.setText('Victory! Your dam is complete!');
     
-    // Show game over screen after delay
+    console.log('Game Over triggered with score:', this.gameState.score);
+    
+    // Go directly to GameOver scene with score submission options
     this.time.delayedCall(2000, () => {
+      console.log('Starting GameOver scene...');
       this.scene.start('GameOver', { 
         score: this.gameState.score,
         level: this.gameState.level,
@@ -633,6 +822,9 @@ export class Game extends Scene {
     
     // Render the game
     this.renderGame();
+    
+    // Check for timed encouragement
+    this.checkForTimedEncouragement();
   }
 
   private renderGame() {
@@ -709,46 +901,96 @@ export class Game extends Scene {
     block.strokeRect(pixelX, pixelY, this.cellSize - 1, this.cellSize - 1);
   }
 
-  private drawSmallBeaver(x: number, y: number): void {
-    if (!this.beaver) return;
-    
-    this.beaver.clear();
-    
-    // Small pixel art beaver for sidebar
-    const pixelSize = 2;
+  private startBeaverIdleAnimation(): void {
+    // Gentle side-to-side cheering animation
+    this.beaverAnimation = this.tweens.add({
+      targets: this.beaverContainer,
+      x: '+=8',
+      duration: 2000,
+      ease: 'Sine.easeInOut',
+      yoyo: true,
+      repeat: -1
+    });
+  }
+
+  private createPixelArtBeaver(): void {
+    // Enhanced pixel art beaver as fallback
+    const beaverGraphics = this.add.graphics();
+    const pixelSize = 3; // Larger pixels for better visibility
     
     const drawPixel = (px: number, py: number, color: number) => {
-      this.beaver.fillStyle(color);
-      this.beaver.fillRect(x + px * pixelSize, y + py * pixelSize, pixelSize, pixelSize);
+      beaverGraphics.fillStyle(color);
+      beaverGraphics.fillRect(px * pixelSize, py * pixelSize, pixelSize, pixelSize);
     };
     
-    // Simple small beaver
-    // Hat
-    drawPixel(-4, -6, 0xFF8C00); drawPixel(-3, -6, 0xFF8C00); drawPixel(-2, -6, 0xFF8C00);
-    drawPixel(-1, -6, 0xFF8C00); drawPixel(0, -6, 0xFF8C00); drawPixel(1, -6, 0xFF8C00);
-    drawPixel(2, -6, 0xFF8C00); drawPixel(3, -6, 0xFF8C00);
+    // Enhanced beaver design
+    // Construction hat
+    for (let x = -6; x <= 6; x++) {
+      drawPixel(x, -8, 0xFF8C00);
+    }
+    for (let x = -5; x <= 5; x++) {
+      drawPixel(x, -7, 0xFF8C00);
+    }
     
     // Head
-    drawPixel(-3, -4, 0x8B4513); drawPixel(-2, -4, 0x8B4513); drawPixel(-1, -4, 0x8B4513);
-    drawPixel(0, -4, 0x8B4513); drawPixel(1, -4, 0x8B4513); drawPixel(2, -4, 0x8B4513);
+    for (let y = -6; y <= -2; y++) {
+      for (let x = -4; x <= 4; x++) {
+        if (Math.abs(x) <= 4 - Math.abs(y + 4)) {
+          drawPixel(x, y, 0x8B4513);
+        }
+      }
+    }
     
     // Eyes
-    drawPixel(-2, -3, 0x000000); drawPixel(1, -3, 0x000000);
+    drawPixel(-2, -4, 0x000000);
+    drawPixel(2, -4, 0x000000);
+    drawPixel(-2, -5, 0xFFFFFF);
+    drawPixel(2, -5, 0xFFFFFF);
+    
+    // Nose
+    drawPixel(0, -3, 0x000000);
     
     // Teeth
-    drawPixel(-1, -1, 0x87CEEB); drawPixel(0, -1, 0x87CEEB);
+    drawPixel(-1, -1, 0xFFFFFF);
+    drawPixel(0, -1, 0xFFFFFF);
+    drawPixel(1, -1, 0xFFFFFF);
     
     // Body
-    drawPixel(-2, 1, 0x8B4513); drawPixel(-1, 1, 0x8B4513); drawPixel(0, 1, 0x8B4513); drawPixel(1, 1, 0x8B4513);
+    for (let y = 0; y <= 4; y++) {
+      for (let x = -3; x <= 3; x++) {
+        drawPixel(x, y, 0x8B4513);
+      }
+    }
+    
+    // Arms (pointing/cheering)
+    drawPixel(-4, 1, 0x8B4513);
+    drawPixel(-5, 0, 0x8B4513);
+    drawPixel(4, 1, 0x8B4513);
+    drawPixel(5, 0, 0x8B4513);
     
     // Tail
-    drawPixel(-4, 2, 0x8B4513); drawPixel(-3, 2, 0x8B4513);
+    for (let x = -6; x <= -4; x++) {
+      for (let y = 2; y <= 4; y++) {
+        drawPixel(x, y, 0x654321);
+      }
+    }
+    
+    this.beaverContainer.add(beaverGraphics);
+    this.startBeaverIdleAnimation();
   }
 
   shutdown() {
     if (this.mobileControls) {
       this.mobileControls.destroy();
       this.mobileControls = null;
+    }
+    
+    if (this.beaverAnimation) {
+      this.beaverAnimation.destroy();
+    }
+    
+    if (this.beaverContainer) {
+      this.beaverContainer.destroy();
     }
   }
 }

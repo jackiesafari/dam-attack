@@ -409,7 +409,7 @@ export class LeaderboardUI {
     
     container.add(bg);
 
-    const fontSize = isMobile ? '11px' : '13px';
+    const fontSize = isMobile ? '16px' : '13px'; // Increased mobile font size from 11px to 16px
     const textColor = rank <= 3 ? '#FFD700' : '#FFFFFF';
 
     // Rank with medal for top 3

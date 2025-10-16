@@ -7,6 +7,7 @@ export class MainMenu extends Scene {
   subtitle: GameObjects.Text | null = null;
   controlsText: GameObjects.Text | null = null;
   startButton: GameObjects.Container | null = null;
+
   speechBubble: GameObjects.Container | null = null;
   floatingLogs: GameObjects.Container[] = [];
   particles: GameObjects.Particles.ParticleEmitter | null = null;
@@ -22,6 +23,7 @@ export class MainMenu extends Scene {
     this.subtitle = null;
     this.controlsText = null;
     this.startButton = null;
+
     this.speechBubble = null;
     this.floatingLogs = [];
     this.particles = null;
@@ -53,6 +55,11 @@ export class MainMenu extends Scene {
     this.input.keyboard?.once('keydown-SPACE', () => {
       this.scene.start('Game');
     });
+
+    // Add keyboard shortcut for leaderboard
+    this.input.keyboard?.on('keydown-L', () => {
+      this.scene.start('Leaderboard');
+    });
   }
 
   private refreshLayout(): void {
@@ -64,6 +71,7 @@ export class MainMenu extends Scene {
     this.updateModernTitle(width, height);
     this.updateProminentBeaver(width, height);
     this.updateModernButton(width, height);
+
     this.updateInstructions(width, height);
   }
 
@@ -82,8 +90,8 @@ export class MainMenu extends Scene {
     const steps = colors.length;
 
     for (let i = 0; i < steps; i++) {
-      this.background.fillStyle(colors[i], 1);
-      this.background.fillRect(0, (height / steps) * i, width, (height / steps) + 1);
+      this.background.fillStyle(colors[i] || 0x000000, 1);
+      this.background.fillRect(0, (height / steps) * i, width, Math.ceil(height / steps) + 1);
     }
 
     // Create retro 80s grid effect
@@ -318,6 +326,8 @@ export class MainMenu extends Scene {
     });
 
     this.updateModernButton(width, height);
+    
+
   }
 
   private updateModernButton(width: number, height: number): void {
@@ -374,7 +384,7 @@ export class MainMenu extends Scene {
     }).setOrigin(0.5);
 
     // Leaderboard instruction
-    const leaderboardText = this.add.text(width / 2, panelY + panelHeight * 0.85, 'Press L for Leaderboard', {
+    this.add.text(width / 2, panelY + panelHeight * 0.85, 'Press L for Leaderboard', {
       fontFamily: 'Arial',
       fontSize: `${Math.max(18, bodyFontSize * 0.75)}px`,
       color: '#00FFFF', // Bright cyan
@@ -410,6 +420,9 @@ export class MainMenu extends Scene {
       strokeThickness: 3
     });
   }
+
+
+
 
 
 }

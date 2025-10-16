@@ -286,7 +286,7 @@ export class UIManager {
     // Title
     const title = this.scene.add.text(0, -220, '🏆 Leaderboard', {
       fontFamily: 'Arial Black',
-      fontSize: this.config.isMobile ? '22px' : '26px',
+      fontSize: this.config.isMobile ? '28px' : '26px', // Increased mobile title from 22px to 28px
       color: '#FFD700',
       stroke: '#000000',
       strokeThickness: 2
@@ -306,7 +306,7 @@ export class UIManager {
         `${rank}. ${entry.username || 'Anonymous'} - ${entry.score}`, 
         {
           fontFamily: 'Arial',
-          fontSize: this.config.isMobile ? '14px' : '16px',
+          fontSize: this.config.isMobile ? '18px' : '16px', // Increased mobile font from 14px to 18px
           color: rank <= 3 ? '#FFD700' : '#FFFFFF'
         }
       );
@@ -316,7 +316,7 @@ export class UIManager {
       const date = new Date(entry.timestamp).toLocaleDateString();
       const dateText = this.scene.add.text(150, y, date, {
         fontFamily: 'Arial',
-        fontSize: this.config.isMobile ? '12px' : '14px',
+        fontSize: this.config.isMobile ? '16px' : '14px', // Increased mobile font from 12px to 16px
         color: '#CCCCCC'
       });
       modal.add(dateText);

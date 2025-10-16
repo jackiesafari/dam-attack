@@ -1,0 +1,30 @@
+{
+  "mcpServers": {
+    "devvit-mcp": {
+      "command": "npx",
+      "args": ["-y", "@devvit/mcp"],
+      "env": {
+        "DEVVIT_LOG_LEVEL": "INFO"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "get_subreddit_info",
+        "get_user_info", 
+        "get_post_info",
+        "list_posts",
+        "search_reddit"
+      ]
+    },
+    "reddit-docs": {
+      "command": "uvx",
+      "args": ["mcp-server-fetch"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "fetch_url"
+      ]
+    }
+  }
+}

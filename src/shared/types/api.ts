@@ -31,11 +31,16 @@ export type LeaderboardResponse = {
 };
 
 export type SubmitScoreRequest = {
-  type: 'submitScore';
-  username: string;
   score: number;
   level: number;
   lines: number;
+};
+
+export type RedditUserResponse = {
+  username: string;
+  authenticated: boolean;
+  bestScore?: number;
+  currentRank?: number;
 };
 
 export type SubmitScoreResponse = {

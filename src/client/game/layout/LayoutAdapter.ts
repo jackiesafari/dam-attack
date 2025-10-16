@@ -325,33 +325,39 @@ export class LayoutAdapter {
   }
 
   /**
-   * Create mobile controls UI
+   * Create mobile controls UI - positioned on sides to avoid blocking game area
    */
   private createMobileControlsUI(layout: LayoutConfig): void {
-    const controlsContainer = this.scene.add.container(
-      0,
-      this.scene.scale.height - layout.ui.bottomMargin
-    );
+    const controlsContainer = this.scene.add.container(0, 0);
     controlsContainer.setName('mobile-controls');
 
     const buttonSize = layout.controls.buttonSize;
     const spacing = layout.controls.buttonSpacing;
-    const totalWidth = (buttonSize * 5) + (spacing * 4);
-    const startX = (this.scene.scale.width - totalWidth) / 2;
+    const sideMargin = 20; // Distance from screen edge
+    
+    // Position controls in lower half to avoid blocking game area
+    const controlsY = this.scene.scale.height - 200;
 
-    const buttons = [
-      { key: 'left', symbol: '←', x: startX },
-      { key: 'right', symbol: '→', x: startX + buttonSize + spacing },
-      { key: 'rotate', symbol: '🔄', x: startX + (buttonSize + spacing) * 2 },
-      { key: 'down', symbol: '⬇', x: startX + (buttonSize + spacing) * 3 },
-      { key: 'drop', symbol: '⚡', x: startX + (buttonSize + spacing) * 4 }
+    // Left side controls (movement)
+    const leftButtons = [
+      { key: 'left', symbol: '←', x: sideMargin, y: controlsY },
+      { key: 'down', symbol: '⬇', x: sideMargin, y: controlsY + buttonSize + spacing }
     ];
 
-    buttons.forEach(btn => {
+    // Right side controls (rotation and drop)
+    const rightButtons = [
+      { key: 'right', symbol: '→', x: this.scene.scale.width - sideMargin - buttonSize, y: controlsY },
+      { key: 'rotate', symbol: '🔄', x: this.scene.scale.width - sideMargin - buttonSize, y: controlsY + buttonSize + spacing },
+      { key: 'drop', symbol: '⚡', x: this.scene.scale.width - sideMargin - buttonSize, y: controlsY + (buttonSize + spacing) * 2 }
+    ];
+
+    const allButtons = [...leftButtons, ...rightButtons];
+
+    allButtons.forEach(btn => {
       const button = this.components.uiManager.createButton({
         text: btn.symbol,
         x: btn.x + buttonSize / 2,
-        y: 0,
+        y: btn.y,
         width: buttonSize,
         height: buttonSize,
         onClick: () => {

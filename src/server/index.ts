@@ -90,7 +90,7 @@ router.post<{ postId: string }, DecrementResponse | { status: string; message: s
 router.get('/api/reddit-user', async (_req, res): Promise<void> => {
   try {
     const { userId } = context;
-    
+
     if (!userId) {
       res.status(401).json({
         status: 'error',
@@ -101,24 +101,24 @@ router.get('/api/reddit-user', async (_req, res): Promise<void> => {
 
     // Get user info from Reddit API
     const user = await reddit.getUserById(userId);
-    
+
     // Check if user has a score on the leaderboard
     const leaderboardKey = 'dam-attack:leaderboard';
     const userKey = `reddit_${userId}`;
     let bestScore = 0;
     let currentRank = null;
-    
+
     try {
       const allScores = await redis.zRange(leaderboardKey, 0, -1);
-      
+
       // Sort by score in descending order (same as leaderboard display)
       const sortedScores = allScores.sort((a, b) => b.score - a.score);
-      
+
       // Find user's best score and rank
       for (let i = 0; i < sortedScores.length; i++) {
         const entry = sortedScores[i];
         if (!entry) continue;
-        
+
         try {
           const userData = JSON.parse(entry.member);
           if (userData.userKey === userKey) {
@@ -132,7 +132,7 @@ router.get('/api/reddit-user', async (_req, res): Promise<void> => {
     } catch (redisError) {
       console.warn('Error checking user score:', redisError);
     }
-    
+
     res.json({
       username: `u/${user?.username || 'Unknown'}`,
       authenticated: true,
@@ -152,17 +152,17 @@ router.get('/api/reddit-user', async (_req, res): Promise<void> => {
 router.get('/api/leaderboard', async (_req, res): Promise<void> => {
   try {
     const leaderboardKey = 'dam-attack:leaderboard';
-    
+
     // Get all scores from Redis sorted set
     const entries = await redis.zRange(leaderboardKey, 0, -1);
-    
+
     // Sort by score in descending order (highest first) and take top 10
     const sortedEntries = entries
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
-    
+
     const leaderboard: LeaderboardEntry[] = [];
-    
+
     // Parse each entry
     for (const entry of sortedEntries) {
       try {
@@ -181,12 +181,12 @@ router.get('/api/leaderboard', async (_req, res): Promise<void> => {
         continue;
       }
     }
-    
+
     const response: LeaderboardResponse = {
       type: 'leaderboard',
       entries: leaderboard
     };
-    
+
     res.json(response);
   } catch (error) {
     console.error('Error fetching leaderboard:', error);
@@ -201,7 +201,7 @@ router.post('/api/submit-score', async (req, res): Promise<void> => {
   try {
     const { score, level, lines } = req.body;
     const { userId } = context;
-    
+
     if (typeof score !== 'number' || typeof level !== 'number' || typeof lines !== 'number') {
       res.status(400).json({
         type: 'submitScore',
@@ -213,7 +213,7 @@ router.post('/api/submit-score', async (req, res): Promise<void> => {
 
     let username = 'Anonymous Player';
     let isRedditUser = false;
-    
+
     // Try to get Reddit username with better error handling
     if (userId) {
       try {
@@ -231,18 +231,18 @@ router.post('/api/submit-score', async (req, res): Promise<void> => {
       console.warn('No userId in context, using anonymous submission');
       console.warn('Context:', { userId: context.userId, postId: context.postId });
     }
-    
+
     const leaderboardKey = 'dam-attack:leaderboard';
-    
+
     // Create unique member identifier for this user
     // Use userId for Reddit users, or fallback to username for anonymous
     const userKey = isRedditUser ? `reddit_${userId}` : `anon_${username}`;
-    
+
     // Check if user already has a score by getting all scores and searching
     const existingScores = await redis.zRange(leaderboardKey, 0, -1);
     let existingScore = 0;
     let existingEntry = null;
-    
+
     // Find existing score for this user
     for (const entry of existingScores) {
       try {
@@ -257,14 +257,14 @@ router.post('/api/submit-score', async (req, res): Promise<void> => {
         continue;
       }
     }
-    
+
     // Only update if this is a better score
     if (score > existingScore) {
       // Remove old entry if it exists
       if (existingEntry) {
         await redis.zRem(leaderboardKey, [existingEntry]);
       }
-      
+
       // Create new member data with user key for uniqueness
       const memberData = JSON.stringify({
         username,
@@ -274,22 +274,22 @@ router.post('/api/submit-score', async (req, res): Promise<void> => {
         userKey,
         isRedditUser
       });
-      
+
       // Add new score to sorted set
       await redis.zAdd(leaderboardKey, { member: memberData, score });
-      
+
       console.log(`Score updated for ${username}: ${existingScore} -> ${score}`);
     } else {
       console.log(`Score not updated for ${username}: ${score} <= ${existingScore}`);
     }
-    
+
     // Get user's current rank (1-based) - sort by score first like the leaderboard
     const currentScores = await redis.zRange(leaderboardKey, 0, -1);
     let userRank = null;
-    
+
     // Sort by score in descending order (same as leaderboard display)
     const sortedScores = currentScores.sort((a, b) => b.score - a.score);
-    
+
     for (let i = 0; i < sortedScores.length; i++) {
       const entry = sortedScores[i];
       if (!entry) continue;
@@ -303,10 +303,10 @@ router.post('/api/submit-score', async (req, res): Promise<void> => {
         continue;
       }
     }
-    
+
     // Get total number of players
     const totalPlayers = await redis.zCard(leaderboardKey);
-    
+
     let message = 'Score submitted successfully!';
     if (userRank !== null) {
       if (userRank <= 10) {
@@ -315,14 +315,14 @@ router.post('/api/submit-score', async (req, res): Promise<void> => {
         message = `${username}, you ranked #${userRank} out of ${totalPlayers} players!`;
       }
     }
-    
+
     const response: SubmitScoreResponse = {
       type: 'submitScore',
       success: true,
       rank: userRank || 0,
       message
     };
-    
+
     res.json(response);
   } catch (error) {
     console.error('Error submitting score:', error);
@@ -337,7 +337,7 @@ router.post('/api/submit-score', async (req, res): Promise<void> => {
 router.post('/api/submit-anonymous', async (req, res): Promise<void> => {
   try {
     const { score, level, lines } = req.body;
-    
+
     if (typeof score !== 'number' || typeof level !== 'number' || typeof lines !== 'number') {
       res.status(400).json({
         type: 'submitScore',
@@ -348,11 +348,11 @@ router.post('/api/submit-anonymous', async (req, res): Promise<void> => {
     }
 
     const leaderboardKey = 'dam-attack:leaderboard';
-    
+
     // Create unique anonymous ID that persists across sessions
     const anonymousId = `anon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const userKey = anonymousId;
-    
+
     // Create anonymous member data
     const memberData = JSON.stringify({
       username: 'Anonymous',
@@ -363,17 +363,17 @@ router.post('/api/submit-anonymous', async (req, res): Promise<void> => {
       userKey,
       isRedditUser: false
     });
-    
+
     // Add score to sorted set (each anonymous submission is unique)
     await redis.zAdd(leaderboardKey, { member: memberData, score });
-    
+
     // Get rank for this anonymous submission by manually calculating (sorted by score)
     const allScores = await redis.zRange(leaderboardKey, 0, -1);
     let userRank = null;
-    
+
     // Sort by score in descending order (same as leaderboard display)
     const sortedScores = allScores.sort((a, b) => b.score - a.score);
-    
+
     for (let i = 0; i < sortedScores.length; i++) {
       const entry = sortedScores[i];
       if (!entry) continue;
@@ -382,10 +382,10 @@ router.post('/api/submit-anonymous', async (req, res): Promise<void> => {
         break;
       }
     }
-    
+
     // Get total number of players
     const totalPlayers = await redis.zCard(leaderboardKey);
-    
+
     let message = 'Score submitted anonymously!';
     if (userRank !== null) {
       if (userRank <= 10) {
@@ -394,14 +394,14 @@ router.post('/api/submit-anonymous', async (req, res): Promise<void> => {
         message = `Anonymous score ranked #${userRank} out of ${totalPlayers} players!`;
       }
     }
-    
+
     const response: SubmitScoreResponse = {
       type: 'submitScore',
       success: true,
       rank: userRank || 0,
       message
     };
-    
+
     res.json(response);
   } catch (error) {
     console.error('Error submitting anonymous score:', error);

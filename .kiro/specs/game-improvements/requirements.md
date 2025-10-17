@@ -30,17 +30,17 @@ The Dam Attack game is a Tetris-style puzzle game with a beaver theme that runs 
 4. WHEN the Devvit API is unavailable THEN the system SHALL gracefully fall back to cached or default usernames
 5. WHEN debugging username issues THEN the system SHALL provide clear logging about the retrieval process
 
-### Requirement 3: Improve Mobile Touch Controls and Input Reliability
+### Requirement 3: Implement Enhanced Mobile Touch Controls with Retro Design
 
-**User Story:** As a mobile player, I want responsive and reliable touch controls so that I can play the game effectively on my device without input lag or missed taps.
+**User Story:** As a mobile player, I want large, visually appealing touch controls with retro aesthetics so that I can easily see and tap the controls while maintaining the game's neon theme.
 
 #### Acceptance Criteria
 
-1. WHEN I tap mobile control buttons THEN the system SHALL respond immediately with visual feedback
-2. WHEN I perform touch gestures THEN the system SHALL register all inputs without missing taps
-3. WHEN buttons are pressed THEN the system SHALL provide haptic feedback where supported
-4. WHEN the screen orientation changes THEN the system SHALL maintain control responsiveness
-5. WHEN multiple touches occur THEN the system SHALL handle them appropriately without conflicts
+1. WHEN I view the mobile controls THEN the system SHALL display large, square buttons with neon cyan borders and clear icons
+2. WHEN I tap control buttons THEN the system SHALL provide immediate visual feedback with button press animations
+3. WHEN buttons are arranged THEN the system SHALL position them around the game board for optimal thumb reach
+4. WHEN the beaver mascot is displayed THEN the system SHALL show it prominently in the left control area
+5. WHEN controls are rendered THEN the system SHALL maintain retro 80s aesthetic with neon colors and clean typography
 
 ### Requirement 4: Enhance Visual Design and User Interface
 
@@ -90,7 +90,19 @@ The Dam Attack game is a Tetris-style puzzle game with a beaver theme that runs 
 4. WHEN buttons are pressed THEN the system SHALL provide audio confirmation
 5. WHEN audio settings are changed THEN the system SHALL respect user preferences and persist settings
 
-### Requirement 8: Add Game Features and Polish
+### Requirement 8: Implement Mobile-First UI Layout Design
+
+**User Story:** As a mobile player, I want a well-organized interface that maximizes the game board while providing easy access to controls so that I can focus on gameplay.
+
+#### Acceptance Criteria
+
+1. WHEN playing on mobile THEN the system SHALL arrange controls in left and right columns around the central game board
+2. WHEN displaying the game board THEN the system SHALL maximize its size while leaving space for essential controls
+3. WHEN showing game information THEN the system SHALL display score, level, and next piece in clearly visible areas
+4. WHEN controls are positioned THEN the system SHALL place movement controls on the left and action controls on the right
+5. WHEN the interface loads THEN the system SHALL maintain consistent spacing and alignment across all screen sizes
+
+### Requirement 9: Add Game Features and Polish
 
 **User Story:** As a player, I want additional game features and polish so that the game provides long-term engagement.
 

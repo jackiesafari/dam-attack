@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dam Attack - Mobile Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #0A0A0F;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        #game-container {
+            width: 100%;
+            max-width: 800px;
+            height: 100vh;
+            position: relative;
+        }
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+    </div>
+    
+    <script src="dist/client/assets/phaser-CRaLQf_f.js"></script>
+    <script src="dist/client/assets/index-B5Gt0s17.js"></script>
+    
+    <script>
+        // Force mobile detection for testing
+        console.log('🔧 Mobile test page loaded');
+        console.log('📱 Touch support:', 'ontouchstart' in window);
+        console.log('📱 Max touch points:', navigator.maxTouchPoints);
+    </script>
+</body>
+</html>

@@ -151,52 +151,118 @@ class DevvitUserManager {
 }
 ```
 
-### 3. UI Stability Improvements
+### 3. Enhanced Mobile Controls with Retro Design
 
-**Purpose**: Fix broken UI elements and improve reliability.
+**Purpose**: Implement large, visually appealing mobile controls that match the retro aesthetic and provide excellent usability.
 
-**Current Problems**:
-- Beaver logo not loading (wrong path: `'beaverlogo.png'` should be `'/beaverlogo.png'`)
-- Complex animations causing performance issues
-- Overlapping header elements
-- Mobile controls with poor responsiveness
+**Design Requirements**:
+- Large square buttons (80x80px minimum) with neon cyan borders
+- Clear, high-contrast icons and symbols
+- Strategic positioning around the game board
+- Retro 80s styling with consistent theming
+- Immediate visual feedback on touch
 
 **Solution Design**:
 ```typescript
-class StableUIManager {
-  public createSimpleHeader(): void {
-    // Remove complex animations and beaver logos
-    // Use simple, reliable text-based header
-    const title = this.add.text(width / 2, 25, 'BEAVER DAM BUILDER', {
-      fontFamily: 'Arial Black',
-      fontSize: '24px',
-      color: '#8B4513',
-      stroke: '#FFFFFF',
-      strokeThickness: 2
-    }).setOrigin(0.5);
+class EnhancedMobileControlsUI {
+  private controlsContainer: Phaser.GameObjects.Container;
+  private buttonStyle = {
+    width: 80,
+    height: 80,
+    borderColor: 0x00FFFF, // Neon cyan
+    borderWidth: 2,
+    backgroundColor: 0x000000,
+    cornerRadius: 8
+  };
+  
+  public createMobileControlsLayout(): void {
+    // Left column controls (movement)
+    this.createLeftControls();
+    
+    // Right column controls (actions)  
+    this.createRightControls();
+    
+    // Beaver mascot display
+    this.createBeaverDisplay();
   }
   
-  public createReliableMobileControls(): void {
-    // Simplified mobile buttons without complex animations
-    const buttons = [
-      { key: 'left', symbol: '←', action: () => this.movePiece(-1, 0) },
-      { key: 'right', symbol: '→', action: () => this.movePiece(1, 0) },
-      { key: 'rotate', symbol: '↻', action: () => this.rotatePiece() },
-      { key: 'down', symbol: '↓', action: () => this.movePiece(0, 1) }
+  private createLeftControls(): void {
+    const leftX = 50;
+    const startY = 200;
+    const spacing = 100;
+    
+    // Movement controls arranged vertically
+    const controls = [
+      { icon: '→', action: 'moveRight', y: startY },
+      { icon: '🦫', action: 'showBeaver', y: startY + spacing }, // Beaver mascot
+      { icon: '←', action: 'moveLeft', y: startY + spacing * 2 },
+      { icon: '↓', action: 'softDrop', y: startY + spacing * 3 }
     ];
     
-    // Larger touch targets, immediate feedback
-    buttons.forEach(btn => {
-      const button = this.createTouchButton(btn);
-      button.on('pointerdown', btn.action);
+    controls.forEach(control => {
+      this.createStyledButton(leftX, control.y, control.icon, control.action);
     });
   }
   
-  public removeProblematicAnimations(): void {
-    // Remove swimming beaver animations
-    // Remove complex water effects
-    // Remove resize-dependent animations
-    // Keep only essential, lightweight effects
+  private createRightControls(): void {
+    const rightX = this.cameras.main.width - 50;
+    const startY = 200;
+    const spacing = 100;
+    
+    // Action controls
+    const controls = [
+      { icon: '↻', action: 'rotate', y: startY },
+      { icon: '⬇', action: 'hardDrop', y: startY + spacing }
+    ];
+    
+    controls.forEach(control => {
+      this.createStyledButton(rightX, control.y, control.icon, control.action);
+    });
+  }
+  
+  private createStyledButton(x: number, y: number, icon: string, action: string): Phaser.GameObjects.Container {
+    const button = this.add.container(x, y);
+    
+    // Button background with neon border
+    const bg = this.add.rectangle(0, 0, this.buttonStyle.width, this.buttonStyle.height, this.buttonStyle.backgroundColor);
+    bg.setStrokeStyle(this.buttonStyle.borderWidth, this.buttonStyle.borderColor);
+    
+    // Icon/symbol
+    const iconText = this.add.text(0, 0, icon, {
+      fontFamily: 'Arial Black',
+      fontSize: '32px',
+      color: '#00FFFF',
+      align: 'center'
+    }).setOrigin(0.5);
+    
+    button.add([bg, iconText]);
+    
+    // Touch interactions
+    bg.setInteractive();
+    bg.on('pointerdown', () => this.handleButtonPress(action, button));
+    bg.on('pointerup', () => this.handleButtonRelease(button));
+    
+    return button;
+  }
+  
+  private handleButtonPress(action: string, button: Phaser.GameObjects.Container): void {
+    // Visual feedback - button press animation
+    button.setScale(0.95);
+    button.setAlpha(0.8);
+    
+    // Execute game action
+    this.executeGameAction(action);
+    
+    // Haptic feedback if available
+    if (navigator.vibrate) {
+      navigator.vibrate(50);
+    }
+  }
+  
+  private handleButtonRelease(button: Phaser.GameObjects.Container): void {
+    // Return to normal state
+    button.setScale(1.0);
+    button.setAlpha(1.0);
   }
 }
 ```
@@ -267,7 +333,73 @@ class AudioManager {
 }
 ```
 
-### 7. ScoreManager
+### 7. Mobile-First Layout Manager
+
+**Purpose**: Organize the game interface for optimal mobile experience while maintaining desktop compatibility.
+
+```typescript
+interface LayoutConfig {
+  gameBoard: { x: number; y: number; width: number; height: number };
+  leftControls: { x: number; y: number; width: number };
+  rightControls: { x: number; y: number; width: number };
+  header: { x: number; y: number; width: number; height: number };
+  scorePanel: { x: number; y: number; width: number; height: number };
+}
+
+class MobileLayoutManager {
+  private currentLayout: LayoutConfig;
+  
+  public calculateOptimalLayout(screenWidth: number, screenHeight: number): LayoutConfig {
+    // Calculate game board size (maximize while leaving room for controls)
+    const controlWidth = 100;
+    const headerHeight = 80;
+    const padding = 20;
+    
+    const boardWidth = screenWidth - (controlWidth * 2) - (padding * 3);
+    const boardHeight = screenHeight - headerHeight - (padding * 2);
+    
+    return {
+      gameBoard: {
+        x: screenWidth / 2,
+        y: headerHeight + (boardHeight / 2) + padding,
+        width: boardWidth,
+        height: boardHeight
+      },
+      leftControls: {
+        x: controlWidth / 2 + padding,
+        y: screenHeight / 2,
+        width: controlWidth
+      },
+      rightControls: {
+        x: screenWidth - (controlWidth / 2) - padding,
+        y: screenHeight / 2,
+        width: controlWidth
+      },
+      header: {
+        x: screenWidth / 2,
+        y: headerHeight / 2,
+        width: screenWidth,
+        height: headerHeight
+      },
+      scorePanel: {
+        x: screenWidth - 120,
+        y: headerHeight + 60,
+        width: 100,
+        height: 120
+      }
+    };
+  }
+  
+  public applyLayout(layout: LayoutConfig): void {
+    // Apply calculated layout to all game elements
+    this.positionGameBoard(layout.gameBoard);
+    this.positionControls(layout.leftControls, layout.rightControls);
+    this.positionUI(layout.header, layout.scorePanel);
+  }
+}
+```
+
+### 8. ScoreManager
 
 **Purpose**: Handle scoring, leaderboards, and data persistence.
 

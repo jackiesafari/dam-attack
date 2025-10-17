@@ -1,5 +1,8 @@
 import { Scene } from 'phaser';
 import * as Phaser from 'phaser';
+import { MobileFirstLayoutSystem } from '../managers/MobileFirstLayoutSystem';
+import { MobileControlsUI } from '../ui/MobileControlsUI';
+import { InputAction } from '../managers/InputManager';
 
 // Tetris piece shapes (tetrominos) as wood logs and branches
 const PIECES = {
@@ -65,13 +68,21 @@ type Piece = {
 };
 
 export class Game extends Scene {
+  // Legacy UI elements (will be replaced by layout system)
   private scoreText!: Phaser.GameObjects.Text;
   private levelText!: Phaser.GameObjects.Text;
   private linesText!: Phaser.GameObjects.Text;
   private nextPieceText!: Phaser.GameObjects.Text;
+  
+  // Mobile-first layout system
+  private layoutSystem!: MobileFirstLayoutSystem;
+  private mobileControlsUI: MobileControlsUI | null = null;
+  
+  // Game state
   private isGameOver: boolean = false;
   private isMobileDevice: boolean = false;
   private mobileControls: Phaser.GameObjects.Container | null = null;
+  private professionalBeaverDisplay: Phaser.GameObjects.Container | null = null;
   
   // Game board
   private board: number[][] = [];
@@ -142,6 +153,9 @@ export class Game extends Scene {
                          this.sys.game.device.os.iOS ||
                          'ontouchstart' in window;
 
+    // Initialize mobile-first layout system
+    this.initializeLayoutSystem();
+
     // Initialize game board
     this.initializeBoard();
     
@@ -151,17 +165,14 @@ export class Game extends Scene {
     // Create beaver character
     this.createBeaver();
     
-    // Create header with neon styling
-    this.createHeader();
-    
-    // Create score display
-    this.createScoreDisplay();
-    
     // Create game board visual
     this.createBoardVisual();
     
-    // Create input handlers
-    this.createInputHandlers();
+    // Create mobile-first input handlers
+    this.createMobileFirstInputHandlers();
+    
+    // Apply initial layout
+    this.applyMobileFirstLayout();
     
     // Start the game
     this.spawnNewPiece();
@@ -171,6 +182,24 @@ export class Game extends Scene {
     // Initial welcome message from beaver
     this.time.delayedCall(1000, () => {
       this.showRandomEncouragement("Welcome, builder! Let's build an amazing dam together!");
+    });
+  }
+
+  private initializeLayoutSystem(): void {
+    // Create mobile-first layout system
+    this.layoutSystem = new MobileFirstLayoutSystem(this, {
+      enableResponsiveLayout: true,
+      enableMobileOptimizations: true,
+      enableNeonStyling: true,
+      debugMode: false
+    });
+    
+    // Initialize with current game state
+    this.layoutSystem.updateGameInfo({
+      score: this.gameState.score,
+      level: this.gameState.level,
+      lines: this.gameState.lines,
+      nextPiece: this.nextPiece?.name || 'log'
     });
   }
 
@@ -212,8 +241,14 @@ export class Game extends Scene {
   }
 
   private createBeaver() {
-    // Create beaver container for positioning
-    this.beaverContainer = this.add.container(120, 300);
+    // D-Pad layout constants (matching createDirectMobileControls)
+    const dPadCenterX = 145;
+    const dPadCenterY = 450;
+    const dPadOffset = 90;
+    
+    // Beaver positioned even higher above D-Pad with maximum dialogue space
+    this.beaverContainer = this.add.container(dPadCenterX, 150); // Moved up to y=150 for maximum dialogue space
+    this.beaverContainer.setDepth(5); // Lower depth than mobile controls
     
     // Create neon frame for beaver (similar to main menu)
     const frameSize = 120;
@@ -245,8 +280,9 @@ export class Game extends Scene {
       this.createPixelArtBeaver();
     }
     
-    // Beaver message with better positioning
-    this.messageText = this.add.text(120, 380, '', {
+    // Message text below beaver, above D-Pad with proper spacing and depth
+    const messageY = 230; // 80px below beaver center (150 + 80) to avoid overlap
+    this.messageText = this.add.text(dPadCenterX, messageY, '', {
       fontFamily: 'Arial Bold',
       fontSize: '12px',
       color: '#FFFF00',
@@ -255,6 +291,9 @@ export class Game extends Scene {
       wordWrap: { width: 200 },
       align: 'center'
     }).setOrigin(0.5, 0);
+    
+    // Set higher depth to ensure text renders in front of beaver
+    this.messageText.setDepth(10);
   }
 
   private createHeader() {
@@ -331,9 +370,20 @@ export class Game extends Scene {
   }
 
   private updateScoreDisplay() {
+    // Update legacy display (for backward compatibility)
     if (this.scoreText) this.scoreText.setText(`SCORE: ${this.gameState.score}`);
     if (this.levelText) this.levelText.setText(`LEVEL: ${this.gameState.level}`);
     if (this.linesText) this.linesText.setText(`LINES: ${this.gameState.lines}`);
+    
+    // Update mobile-first layout system
+    if (this.layoutSystem) {
+      this.layoutSystem.updateGameInfo({
+        score: this.gameState.score,
+        level: this.gameState.level,
+        lines: this.gameState.lines,
+        nextPiece: this.nextPiece?.name || 'log'
+      });
+    }
   }
 
   private createBoardVisual() {
@@ -351,136 +401,288 @@ export class Game extends Scene {
                      this.boardHeight * this.cellSize + 2);
   }
 
-  private createInputHandlers() {
-    // Keyboard input
+  // Old input handler method removed - using createMobileFirstInputHandlers() instead
+
+  private createMobileFirstInputHandlers(): void {
+    // Keyboard input (unchanged)
     if (this.input.keyboard) {
       this.input.keyboard.on('keydown', (event: KeyboardEvent) => {
         if (this.isGameOver) return;
         
         switch (event.code) {
           case 'ArrowLeft':
-            this.movePiece(-1, 0);
+            this.handleGameAction(InputAction.MOVE_LEFT);
             break;
           case 'ArrowRight':
-            this.movePiece(1, 0);
+            this.handleGameAction(InputAction.MOVE_RIGHT);
             break;
           case 'ArrowDown':
-            this.movePiece(0, 1);
+            this.handleGameAction(InputAction.SOFT_DROP);
             break;
           case 'ArrowUp':
             event.preventDefault();
-            this.rotatePiece();
+            this.handleGameAction(InputAction.ROTATE);
             break;
           case 'Space':
             event.preventDefault();
-            this.hardDrop();
+            this.handleGameAction(InputAction.HARD_DROP);
             break;
         }
       });
     }
 
-    // Create mobile controls if needed
-    if (this.isMobileDevice) {
-      this.createMobileControls();
-    }
+    // ALWAYS create enhanced mobile controls for better UX
+    // (works on both mobile and desktop)
+    this.createEnhancedMobileControls();
   }
 
-  private createMobileControls() {
+  private createEnhancedMobileControls(): void {
+    console.log('🎮 Creating DIRECT mobile controls...');
+    
+    // Create controls directly without complex systems
+    this.createDirectMobileControls();
+    
+    console.log('✅ Direct mobile controls created successfully');
+  }
+
+  private createDirectMobileControls(): void {
     const { width, height } = this.scale;
     
-    // Create controls container positioned to avoid blocking game area
-    this.mobileControls = this.add.container(0, 0);
+    // Create container for all controls with proper depth management
+    const controlsContainer = this.add.container(0, 0);
+    controlsContainer.setDepth(2000); // Higher than beaver (1500)
     
-    const buttonSize = 60;
-    const buttonSpacing = 10;
-    const sideMargin = 20; // Distance from screen edge
+    const buttonSize = 90; // Slightly larger for better touch
+    const margin = 25;
     
-    // Left side controls (movement)
-    const leftControlsY = height - 200; // Position in lower half
-    const leftButtonPositions = [
-      { key: 'left', symbol: '←', x: sideMargin, y: leftControlsY },
-      { key: 'down', symbol: '↓', x: sideMargin, y: leftControlsY + buttonSize + buttonSpacing }
-    ];
+    // D-Pad layout constants
+    const dPadCenterX = 145;  // X position for D-Pad center (moved further right for comfortable margin)
+    const dPadCenterY = 450;  // Y position for D-Pad center (middle of screen)
+    const dPadOffset = 90;    // Distance from center to each button
     
-    // Right side controls (rotation and drop)
-    const rightControlsY = height - 200; // Same vertical position as left
-    const rightButtonPositions = [
-      { key: 'right', symbol: '→', x: width - sideMargin - buttonSize, y: rightControlsY },
-      { key: 'rotate', symbol: '↻', x: width - sideMargin - buttonSize, y: rightControlsY + buttonSize + buttonSpacing },
-      { key: 'drop', symbol: '⬇', x: width - sideMargin - buttonSize, y: rightControlsY + (buttonSize + buttonSpacing) * 2 }
-    ];
+    // Calculate positions for professional layout
+    const rightX = width - margin - buttonSize / 2;
     
-    // Combine all button positions
-    const allButtons = [...leftButtonPositions, ...rightButtonPositions];
-    
-    allButtons.forEach(btn => {
-      const button = this.createMobileButton(btn.symbol, btn.x, btn.y);
-      this.mobileControls!.add(button);
+    // Movement buttons in D-Pad cross pattern
+    const movementButtons = [
+      // Right arrow - TOP position
+      { x: dPadCenterX, y: dPadCenterY - dPadOffset, symbol: '→', action: InputAction.MOVE_RIGHT, type: 'movement' },
       
-      button.on('pointerdown', () => {
-        this.handleMobileInput(btn.key);
-      });
+      // Left arrow - LEFT position  
+      { x: dPadCenterX - dPadOffset, y: dPadCenterY, symbol: '←', action: InputAction.MOVE_LEFT, type: 'movement' },
+      
+      // Down arrow - BOTTOM position
+      { x: dPadCenterX, y: dPadCenterY + dPadOffset, symbol: '↓', action: InputAction.SOFT_DROP, type: 'movement' }
+    ];
+    
+    // Right column - action controls with consistent spacing
+    const centerY = height / 2;
+    const mobileSpacing = 30;
+    const buttonSpacing = buttonSize + mobileSpacing * 2;
+    
+    const rightButtons = [
+      // Rotate button positioned to match left side spacing
+      { x: rightX, y: centerY + mobileSpacing * 2, symbol: '↻', action: InputAction.ROTATE, type: 'action' },
+      // Hard drop with same spacing interval as left side
+      { x: rightX, y: centerY + mobileSpacing * 2 + buttonSpacing, symbol: '⬇', action: InputAction.HARD_DROP, type: 'action' }
+    ];
+    
+    // Create professional-looking buttons
+    [...movementButtons, ...rightButtons].forEach(btn => {
+      const button = this.createProfessionalButton(btn.x, btn.y, btn.symbol, btn.action, btn.type, buttonSize);
+      controlsContainer.add(button);
     });
+    
+    // Skip separate beaver display - use main beaver with messages instead
+    
+    // Store reference for cleanup
+    this.mobileControls = controlsContainer;
+    
+    console.log('✅ Created professional mobile controls with enhanced beaver display');
   }
 
-  private createMobileButton(symbol: string, x: number, y: number): Phaser.GameObjects.Container {
+  private createProfessionalButton(x: number, y: number, symbol: string, action: InputAction, type: string, size: number): Phaser.GameObjects.Container {
     const button = this.add.container(x, y);
     
-    // Simple button background
+    // Color scheme based on type
+    const colors = {
+      movement: { primary: 0x00FFFF, secondary: 0x0088CC, glow: 0x00DDFF },
+      action: { primary: 0xFF00FF, secondary: 0xCC0088, glow: 0xFF00DD }
+    };
+    const colorScheme = colors[type] || colors.movement;
+    
+    // Multi-layer professional button design
     const bg = this.add.graphics();
-    bg.fillStyle(0x8B4513, 0.9);
-    bg.fillRoundedRect(-35, -35, 70, 70, 10);
-    bg.lineStyle(3, 0xFFFFFF, 0.8);
-    bg.strokeRoundedRect(-35, -35, 70, 70, 10);
+    
+    // Outer glow (subtle)
+    bg.fillStyle(colorScheme.glow, 0.15);
+    bg.fillRoundedRect(-size/2 - 4, -size/2 - 4, size + 8, size + 8, 12);
+    
+    // Main button background with gradient effect
+    bg.fillStyle(0x0A0A0F, 0.95); // Dark background
+    bg.fillRoundedRect(-size/2, -size/2, size, size, 8);
+    
+    // Inner dark area for depth
+    bg.fillStyle(0x000000, 0.6);
+    bg.fillRoundedRect(-size/2 + 4, -size/2 + 4, size - 8, size - 8, 6);
+    
+    // Primary neon border (thick)
+    bg.lineStyle(3, colorScheme.primary, 1.0);
+    bg.strokeRoundedRect(-size/2, -size/2, size, size, 8);
+    
+    // Secondary inner border for depth
+    bg.lineStyle(1, colorScheme.secondary, 0.8);
+    bg.strokeRoundedRect(-size/2 + 2, -size/2 + 2, size - 4, size - 4, 6);
+    
+    // Highlight line for 3D effect
+    bg.lineStyle(1, 0xFFFFFF, 0.4);
+    bg.strokeRoundedRect(-size/2 + 1, -size/2 + 1, size - 2, size * 0.3, 4);
+    
     button.add(bg);
     
-    // Button text
-    const text = this.add.text(0, 0, symbol, {
+    // Professional icon/symbol with better styling
+    const iconStyle = {
       fontFamily: 'Arial Black',
-      fontSize: '32px',
-      color: '#FFFFFF',
+      fontSize: `${size * 0.45}px`,
+      color: `#${colorScheme.primary.toString(16).padStart(6, '0')}`,
       stroke: '#000000',
-      strokeThickness: 2
-    }).setOrigin(0.5);
-    button.add(text);
+      strokeThickness: 4,
+      shadow: {
+        offsetX: 2,
+        offsetY: 2,
+        color: '#000000',
+        blur: 4,
+        fill: true
+      }
+    };
     
-    // Touch area
-    button.setInteractive(new Phaser.Geom.Rectangle(-40, -40, 80, 80), Phaser.Geom.Rectangle.Contains);
+    const icon = this.add.text(0, 0, symbol, iconStyle).setOrigin(0.5);
+    button.add(icon);
     
-    // Visual feedback
+    // Enhanced interaction with professional feedback
+    button.setInteractive(new Phaser.Geom.Rectangle(-size/2 - 5, -size/2 - 5, size + 10, size + 10), Phaser.Geom.Rectangle.Contains);
+    
     button.on('pointerdown', () => {
-      button.setScale(0.9);
-      if (navigator.vibrate) navigator.vibrate([10]);
+      // Smooth press animation
+      this.tweens.add({
+        targets: button,
+        scaleX: 0.92,
+        scaleY: 0.92,
+        duration: 80,
+        ease: 'Power2'
+      });
+      
+      // Icon glow effect
+      this.tweens.add({
+        targets: icon,
+        alpha: 1.5,
+        scaleX: 1.1,
+        scaleY: 1.1,
+        duration: 100,
+        ease: 'Back.easeOut'
+      });
+      
+      // Enhanced haptic feedback
+      if (navigator.vibrate) {
+        const patterns = {
+          movement: [15],
+          action: [25, 10, 15]
+        };
+        navigator.vibrate(patterns[type] || [20]);
+      }
+      
+      // Execute action
+      this.handleGameAction(action);
     });
     
     button.on('pointerup', () => {
+      // Smooth release with overshoot
+      this.tweens.add({
+        targets: button,
+        scaleX: 1.05,
+        scaleY: 1.05,
+        duration: 120,
+        ease: 'Back.easeOut',
+        onComplete: () => {
+          this.tweens.add({
+            targets: button,
+            scaleX: 1.0,
+            scaleY: 1.0,
+            duration: 80,
+            ease: 'Power2'
+          });
+        }
+      });
+      
+      // Reset icon
+      this.tweens.add({
+        targets: icon,
+        alpha: 1.0,
+        scaleX: 1.0,
+        scaleY: 1.0,
+        duration: 150,
+        ease: 'Power2'
+      });
+    });
+    
+    button.on('pointerout', () => {
+      // Reset if pointer leaves
       button.setScale(1.0);
+      icon.setAlpha(1.0);
+      icon.setScale(1.0);
     });
     
     return button;
   }
 
-  private handleMobileInput(action: string) {
+  // Removed separate beaver display - using main beaver with messages instead
+
+  private handleGameAction(action: InputAction): void {
     if (this.isGameOver) return;
     
     switch (action) {
-      case 'left':
+      case InputAction.MOVE_LEFT:
         this.movePiece(-1, 0);
         break;
-      case 'right':
+      case InputAction.MOVE_RIGHT:
         this.movePiece(1, 0);
         break;
-      case 'down':
+      case InputAction.SOFT_DROP:
         this.movePiece(0, 1);
         break;
-      case 'rotate':
+      case InputAction.ROTATE:
         this.rotatePiece();
         break;
-      case 'drop':
+      case InputAction.HARD_DROP:
         this.hardDrop();
         break;
     }
   }
+
+  private applyMobileFirstLayout(): void {
+    console.log('📱 Applying mobile-first layout...');
+    
+    // Ensure mobile controls are visible
+    if (this.mobileControls) {
+      this.mobileControls.setVisible(true);
+      console.log('✅ Direct mobile controls set to visible');
+    }
+    
+    console.log('✅ Mobile-first layout applied');
+  }
+
+  private createGameBoardContainer(): Phaser.GameObjects.Container {
+    // Create a container for the game board if it doesn't exist
+    const boardContainer = this.add.container(this.boardX, this.boardY);
+    
+    // Add the board visual elements to the container
+    // This is a simplified version - in a full implementation,
+    // you would move all board-related graphics to this container
+    
+    return boardContainer;
+  }
+
+  // Old mobile controls methods removed - using enhanced mobile controls instead
 
   private spawnNewPiece() {
     const pieceKeys = Object.keys(PIECES) as (keyof typeof PIECES)[];
@@ -587,6 +789,8 @@ export class Game extends Scene {
     }
     
     if (linesCleared > 0) {
+      const oldLevel = this.gameState.level;
+      
       this.gameState.lines += linesCleared;
       this.gameState.score += linesCleared * 100 * this.gameState.level;
       
@@ -598,6 +802,25 @@ export class Game extends Scene {
       }
       
       this.updateScoreDisplay();
+      
+      // Animate score increase in mobile-first layout
+      if (this.layoutSystem) {
+        this.layoutSystem.animateScoreIncrease();
+        
+        // Animate level up if level changed
+        if (newLevel > oldLevel) {
+          this.layoutSystem.animateLevelUp();
+        }
+      }
+      
+      // Trigger beaver cheer animation for mobile controls
+      if (this.mobileControlsUI) {
+        if (linesCleared >= 4) {
+          this.mobileControlsUI.playBeaverCheer();
+        } else if (linesCleared >= 2) {
+          this.mobileControlsUI.playBeaverCheer();
+        }
+      }
       
       // Beaver reactions based on lines cleared
       if (linesCleared >= 4) {
@@ -980,6 +1203,18 @@ export class Game extends Scene {
   }
 
   shutdown() {
+    // Clean up mobile-first layout system
+    if (this.layoutSystem) {
+      this.layoutSystem.destroy();
+    }
+    
+    // Clean up enhanced mobile controls
+    if (this.mobileControlsUI) {
+      this.mobileControlsUI.destroy();
+      this.mobileControlsUI = null;
+    }
+    
+    // Clean up legacy mobile controls
     if (this.mobileControls) {
       this.mobileControls.destroy();
       this.mobileControls = null;

@@ -284,7 +284,7 @@ export class Game extends Scene {
     const messageY = 230; // 80px below beaver center (150 + 80) to avoid overlap
     this.messageText = this.add.text(dPadCenterX, messageY, '', {
       fontFamily: 'Arial Bold',
-      fontSize: '12px',
+      fontSize: '18px',
       color: '#FFFF00',
       stroke: '#FF00FF',
       strokeThickness: 1,
@@ -1051,12 +1051,14 @@ export class Game extends Scene {
   }
 
   private renderGame() {
-    // Clear previous render
-    this.children.getChildren().forEach(child => {
-      if (child.getData && child.getData('gameBlock')) {
+    // Clear previous render - more thorough clearing to prevent ghost blocks
+    const children = this.children.getChildren();
+    for (let i = children.length - 1; i >= 0; i--) {
+      const child = children[i];
+      if (child && child.getData && child.getData('gameBlock')) {
         child.destroy();
       }
-    });
+    }
     
     // Render placed pieces
     for (let y = 0; y < this.boardHeight; y++) {
@@ -1090,6 +1092,7 @@ export class Game extends Scene {
     // Create wood texture effect
     const block = this.add.graphics();
     block.setData('gameBlock', true);
+    block.setDepth(1); // Ensure consistent depth for all blocks
     
     // Main wood color
     block.fillStyle(color, 1);

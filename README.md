@@ -1,8 +1,7 @@
 # Dam Attack 🦫
 
-A retro 80s beaver-themed Tetris game built with Devvit and **developed with Kiro AI**! Help the beaver build the ultimate dam by stacking logs, branches, and twigs in this neon-styled puzzle game.
+A retro 80s beaver-themed Tetris game built with Devvit and Kiro! Help the beaver build the ultimate dam by stacking logs, branches, and twigs in this neon-styled puzzle game.
 
-> **🤖 Built with Kiro AI** - This entire game was developed using Kiro, an AI-powered IDE that assisted with code generation, debugging, and implementation of the beaver-themed Tetris mechanics.
 
 ## 🎮 Game Features
 
@@ -68,8 +67,6 @@ This project showcases the power of AI-assisted development using Kiro:
 - Retro grid backgrounds and neon glow effects
 
 ## 🎯 Development Story
-
-This game was built through collaboration with **Kiro AI**, demonstrating how AI can accelerate game development:
 
 1. **Concept to Code**: Started with a simple request for a "beaver-themed Tetris game"
 2. **Iterative Development**: Refined gameplay mechanics through AI-assisted iterations

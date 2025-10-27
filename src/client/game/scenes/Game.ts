@@ -147,6 +147,37 @@ export class Game extends Scene {
     super('Game');
   }
 
+  init() {
+    // Reset game state when scene starts/restarts
+    this.isGameOver = false;
+    this.currentPiece = null;
+    this.nextPiece = null;
+    this.currentX = 0;
+    this.currentY = 0;
+    this.dropTimer = 0;
+    this.lastTime = 0;
+    this.lastEncouragementTime = 0;
+    this.piecesPlaced = 0;
+    
+    // Reset game state
+    this.gameState = {
+      score: 0,
+      level: 1,
+      lines: 0
+    };
+    
+    // Reset board
+    this.board = [];
+    for (let y = 0; y < this.boardHeight; y++) {
+      this.board[y] = [];
+      for (let x = 0; x < this.boardWidth; x++) {
+        this.board[y][x] = 0;
+      }
+    }
+    
+    console.log('🎮 Game state reset for new game');
+  }
+
   create() {
     // Detect mobile device
     this.isMobileDevice = this.sys.game.device.os.android || 
@@ -155,9 +186,6 @@ export class Game extends Scene {
 
     // Initialize mobile-first layout system
     this.initializeLayoutSystem();
-
-    // Initialize game board
-    this.initializeBoard();
     
     // Create retro 80s background
     this.createBackground();
@@ -175,9 +203,20 @@ export class Game extends Scene {
     this.applyMobileFirstLayout();
     
     // Start the game
+    console.log('🎮 Starting new game - spawning first piece');
     this.spawnNewPiece();
     this.lastTime = this.time.now;
     this.lastEncouragementTime = this.time.now;
+    
+    // Ensure we have a current piece
+    if (!this.currentPiece) {
+      console.log('⚠️ No current piece after spawn, retrying...');
+      this.time.delayedCall(100, () => {
+        this.spawnNewPiece();
+      });
+    } else {
+      console.log('✅ First piece spawned successfully:', this.currentPiece.name);
+    }
     
     // Initial welcome message from beaver
     this.time.delayedCall(1000, () => {
@@ -685,37 +724,51 @@ export class Game extends Scene {
   // Old mobile controls methods removed - using enhanced mobile controls instead
 
   private spawnNewPiece() {
+    console.log('🎯 Spawning new piece...');
     const pieceKeys = Object.keys(PIECES) as (keyof typeof PIECES)[];
-    if (pieceKeys.length === 0) return;
+    console.log('📦 Available pieces:', pieceKeys.length);
+    
+    if (pieceKeys.length === 0) {
+      console.log('❌ No pieces available!');
+      return;
+    }
     
     const randomIndex = Math.floor(Math.random() * pieceKeys.length);
     const randomKey = pieceKeys[randomIndex];
+    console.log('🎲 Selected piece:', randomKey);
     
     if (!this.nextPiece && randomKey) {
       this.currentPiece = { ...PIECES[randomKey] };
+      console.log('🆕 Created first piece:', this.currentPiece.name);
       const nextIndex = Math.floor(Math.random() * pieceKeys.length);
       const nextKey = pieceKeys[nextIndex];
       if (nextKey) {
         this.nextPiece = { ...PIECES[nextKey] };
+        console.log('🔮 Created next piece:', this.nextPiece.name);
       }
     } else {
       this.currentPiece = this.nextPiece;
+      console.log('🔄 Using next piece as current:', this.currentPiece?.name);
       const nextIndex = Math.floor(Math.random() * pieceKeys.length);
       const nextKey = pieceKeys[nextIndex];
       if (nextKey) {
         this.nextPiece = { ...PIECES[nextKey] };
+        console.log('🔮 Created new next piece:', this.nextPiece.name);
       }
     }
     
     this.currentX = Math.floor(this.boardWidth / 2) - 1;
     this.currentY = 0;
+    console.log('📍 Positioned piece at:', this.currentX, this.currentY);
     
     // Check for game over
     if (this.currentPiece && this.checkCollision(this.currentPiece.shape, this.currentX, this.currentY)) {
+      console.log('💀 Game over - piece collides at spawn position');
       this.gameOver();
       return;
     }
     
+    console.log('✅ Piece spawned successfully');
     this.updateNextPieceDisplay();
   }
 
@@ -1032,7 +1085,16 @@ export class Game extends Scene {
   }
 
   override update(time: number) {
-    if (this.isGameOver || !this.currentPiece) return;
+    if (this.isGameOver) {
+      console.log('⏸️ Game is over, skipping update');
+      return;
+    }
+    
+    if (!this.currentPiece) {
+      console.log('⚠️ No current piece in update loop, spawning new one');
+      this.spawnNewPiece();
+      return;
+    }
     
     // Handle automatic piece dropping
     this.dropTimer += time - this.lastTime;

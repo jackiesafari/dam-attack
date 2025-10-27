@@ -1,6 +1,9 @@
 {
   "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
   "name": "dam-attack",
+  "media": {
+    "dir": "dist/client/assets"
+  },
   "post": {
     "dir": "dist/client",
     "entrypoints": {

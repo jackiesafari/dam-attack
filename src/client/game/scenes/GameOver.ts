@@ -126,10 +126,14 @@ export class GameOver extends Scene {
   private createActionButtons() {
     const { width, height } = this.scale;
     
-    // Button container at bottom
+    // Mobile detection
+    const isMobile = this.scale.width < 768 || this.scale.height < 600 || ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+    
+    // Mobile-responsive button spacing for larger buttons
+    const buttonWidth = isMobile ? 160 : 100;
+    const buttonSpacing = isMobile ? width / 4.0 : width / 4.5; // Tighter spacing for larger mobile buttons
     const buttonY = height * 0.8;
-    const buttonSpacing = width / 4.5; // Adjust spacing for 4 buttons
-    const startX = width * 0.1;
+    const startX = width * 0.08; // Slightly adjusted start position for better centering
     
     console.log('Reddit username detected:', this.redditUsername);
     
@@ -178,29 +182,43 @@ export class GameOver extends Scene {
   private createButton(x: number, y: number, text: string, textColor: string, bgColor: string, callback: () => void): Phaser.GameObjects.Container {
     const button = this.add.container(x, y);
     
+    // Mobile detection
+    const isMobile = this.scale.width < 768 || this.scale.height < 600 || ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+    
+    // Mobile-responsive button dimensions with larger text support
+    const buttonWidth = isMobile ? 160 : 100;  // Increased width for larger text
+    const buttonHeight = isMobile ? 85 : 60;     // Increased height for larger text
+    const halfWidth = buttonWidth / 2;
+    const halfHeight = buttonHeight / 2;
+    
+    // Padding calculations
+    const horizontalPadding = isMobile ? 18 : 10;  // 18px horizontal padding for mobile
+    const verticalPadding = isMobile ? 13 : 8;    // 13px vertical padding for mobile
+    
     // Button background
     const bg = this.add.graphics();
     bg.fillStyle(Phaser.Display.Color.HexStringToColor(bgColor).color);
-    bg.fillRoundedRect(-50, -30, 100, 60, 10);
+    bg.fillRoundedRect(-halfWidth, -halfHeight, buttonWidth, buttonHeight, 10);
     
     // Button border
     bg.lineStyle(3, Phaser.Display.Color.HexStringToColor(textColor).color);
-    bg.strokeRoundedRect(-50, -30, 100, 60, 10);
+    bg.strokeRoundedRect(-halfWidth, -halfHeight, buttonWidth, buttonHeight, 10);
     
-    // Button text
+    // Button text with larger mobile font size
     const buttonText = this.add.text(0, 0, text, {
       fontFamily: 'Arial Bold',
-      fontSize: '12px',
+      fontSize: isMobile ? '19px' : '12px',  // Increased to 19px for mobile readability
       color: textColor,
       stroke: '#000000',
       strokeThickness: 2,
-      align: 'center'
+      align: 'center',
+      wordWrap: { width: buttonWidth - (horizontalPadding * 2) }  // Proper padding calculation
     }).setOrigin(0.5);
     
     button.add([bg, buttonText]);
     
-    // Make interactive
-    button.setInteractive(new Phaser.Geom.Rectangle(-50, -30, 100, 60), Phaser.Geom.Rectangle.Contains);
+    // Make interactive with proper hit area
+    button.setInteractive(new Phaser.Geom.Rectangle(-halfWidth, -halfHeight, buttonWidth, buttonHeight), Phaser.Geom.Rectangle.Contains);
     
     button.on('pointerdown', () => {
       button.setScale(0.95);
@@ -252,33 +270,49 @@ export class GameOver extends Scene {
   }
 
   private showSubmissionResult(result: any, anonymous: boolean) {
-    // Create result popup
-    const popup = this.add.container(this.scale.width / 2, this.scale.height / 2);
+    // Mobile detection
+    const isMobile = this.scale.width < 768 || this.scale.height < 600 || ('ontouchstart' in window || navigator.maxTouchPoints > 0);
     
-    const bg = this.add.graphics();
-    bg.fillStyle(0x000000, 0.9);
-    bg.fillRoundedRect(-150, -50, 300, 100, 10);
-    bg.lineStyle(3, result.success ? 0x00FF00 : 0xFF0000);
-    bg.strokeRoundedRect(-150, -50, 300, 100, 10);
+    // Create result popup centered on screen
+    const popup = this.add.container(this.scale.width / 2, this.scale.height / 2);
     
     let message = result.message || (result.success ? 'Score submitted!' : 'Submission failed');
     if (result.success && result.rank && !anonymous) {
       message = `Rank #${result.rank}!\n${message}`;
     }
     
+    // Create text first to measure dimensions
     const text = this.add.text(0, 0, message, {
       fontFamily: 'Arial Bold',
-      fontSize: '16px',
+      fontSize: isMobile ? '18px' : '16px',
       color: result.success ? '#00FF00' : '#FF0000',
       stroke: '#000000',
       strokeThickness: 2,
-      align: 'center'
+      align: 'center',
+      wordWrap: { 
+        width: isMobile ? this.scale.width - 80 : 400,  // Max width with screen margins
+        useAdvancedWrap: true 
+      }
     }).setOrigin(0.5);
+    
+    // Calculate dimensions based on text content
+    const horizontalPadding = isMobile ? 24 : 20;  // 20-24px padding as requested
+    const verticalPadding = 16;  // 16px padding top/bottom as requested
+    
+    const boxWidth = Math.max(text.width + (horizontalPadding * 2), isMobile ? 280 : 300);
+    const boxHeight = Math.max(text.height + (verticalPadding * 2), isMobile ? 80 : 100);
+    
+    // Create background with calculated dimensions
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.9);
+    bg.fillRoundedRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight, 10);
+    bg.lineStyle(3, result.success ? 0x00FF00 : 0xFF0000);
+    bg.strokeRoundedRect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight, 10);
     
     popup.add([bg, text]);
     
-    // Auto-hide after 3 seconds
-    this.time.delayedCall(3000, () => {
+    // Auto-hide after 4 seconds (increased from 3 seconds for better readability)
+    this.time.delayedCall(4000, () => {
       popup.destroy();
     });
   }

@@ -134,6 +134,9 @@ export class Leaderboard extends Scene {
     this.isLoading = true;
     const { width } = this.scale;
     
+    // Mobile detection
+    const isMobile = this.scale.width < 768 || this.scale.height < 600 || ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+    
     // Clear existing entries
     this.leaderboardEntries.forEach(entry => entry.destroy());
     this.leaderboardEntries = [];
@@ -149,7 +152,7 @@ export class Leaderboard extends Scene {
       if (leaderboard.length === 0) {
         const noDataText = this.add.text(width / 2, 200, 'No scores available yet!\n\nYour score was submitted successfully!\nTry refreshing or check back later.', {
           fontFamily: 'Arial Bold',
-          fontSize: '16px',
+          fontSize: isMobile ? '18px' : '16px',
           color: '#FFFF00',
           stroke: '#FF00FF',
           strokeThickness: 1,
@@ -161,69 +164,174 @@ export class Leaderboard extends Scene {
         return;
       }
 
-      // Header
+      // Column configuration with proper spacing and widths
+      const columnConfig = {
+        RANK: { width: isMobile ? 60 : 80, x: 0 },
+        USER: { width: isMobile ? 180 : 220, x: 0 },  // Adequate width for usernames
+        SCORE: { width: isMobile ? 80 : 100, x: 0 },
+        LEVEL: { width: isMobile ? 70 : 80, x: 0 },   // Proper width for LEVEL
+        LINES: { width: isMobile ? 70 : 80, x: 0 }    // Proper width for LINES
+      };
+      
+      // Add spacing between columns
+      const columnSpacing = isMobile ? 15 : 20;
+      
+      // Calculate column positions with proper spacing
+      const totalTableWidth = columnConfig.RANK.width + columnConfig.USER.width + columnConfig.SCORE.width + columnConfig.LEVEL.width + columnConfig.LINES.width + (columnSpacing * 4);
+      const tableStartX = width / 2 - totalTableWidth / 2;
+      
+      columnConfig.RANK.x = tableStartX + columnConfig.RANK.width / 2;
+      columnConfig.USER.x = tableStartX + columnConfig.RANK.width + columnSpacing + columnConfig.USER.width / 2;
+      columnConfig.SCORE.x = tableStartX + columnConfig.RANK.width + columnSpacing + columnConfig.USER.width + columnSpacing + columnConfig.SCORE.width / 2;
+      columnConfig.LEVEL.x = tableStartX + columnConfig.RANK.width + columnSpacing + columnConfig.USER.width + columnSpacing + columnConfig.SCORE.width + columnSpacing + columnConfig.LEVEL.width / 2;
+      columnConfig.LINES.x = tableStartX + columnConfig.RANK.width + columnSpacing + columnConfig.USER.width + columnSpacing + columnConfig.SCORE.width + columnSpacing + columnConfig.LEVEL.width + columnSpacing + columnConfig.LINES.width / 2;
+
+      // Header with mobile-responsive font size
       const headerY = 120;
-      const headerText = this.add.text(width / 2, headerY, 'RANK  REDDIT USER          SCORE    LEVEL  LINES', {
+      const headerFontSize = isMobile ? '18px' : '16px';
+      
+      // Create individual header texts for each column
+      const rankHeader = this.add.text(columnConfig.RANK.x, headerY, 'RANK', {
         fontFamily: 'Courier New',
-        fontSize: '18px', // Increased from 14px for better mobile readability
+        fontSize: headerFontSize,
         color: '#00FFFF',
         stroke: '#FF00FF',
         strokeThickness: 1,
         align: 'center'
       }).setOrigin(0.5);
       
-      this.leaderboardEntries.push(headerText);
+      const userHeader = this.add.text(columnConfig.USER.x, headerY, 'REDDIT USER', {
+        fontFamily: 'Courier New',
+        fontSize: headerFontSize,
+        color: '#00FFFF',
+        stroke: '#FF00FF',
+        strokeThickness: 1,
+        align: 'center'
+      }).setOrigin(0.5);
+      
+      const scoreHeader = this.add.text(columnConfig.SCORE.x, headerY, 'SCORE', {
+        fontFamily: 'Courier New',
+        fontSize: headerFontSize,
+        color: '#00FFFF',
+        stroke: '#FF00FF',
+        strokeThickness: 1,
+        align: 'center'
+      }).setOrigin(0.5);
+      
+      const levelHeader = this.add.text(columnConfig.LEVEL.x, headerY, 'LEVEL', {
+        fontFamily: 'Courier New',
+        fontSize: headerFontSize,
+        color: '#00FFFF',
+        stroke: '#FF00FF',
+        strokeThickness: 1,
+        align: 'center'
+      }).setOrigin(0.5);
+      
+      const linesHeader = this.add.text(columnConfig.LINES.x, headerY, 'LINES', {
+        fontFamily: 'Courier New',
+        fontSize: headerFontSize,
+        color: '#00FFFF',
+        stroke: '#FF00FF',
+        strokeThickness: 1,
+        align: 'center'
+      }).setOrigin(0.5);
+      
+      this.leaderboardEntries.push(rankHeader, userHeader, scoreHeader, levelHeader, linesHeader);
 
-      // Leaderboard entries
+      // Leaderboard entries with proper font size and spacing
+      const entryFontSize = isMobile ? '18px' : '16px';  // Restored to 16-18px as requested
+      const rowSpacing = isMobile ? 35 : 30;
+      const cellPadding = isMobile ? 12 : 15;
+      
       leaderboard.forEach((entry, index) => {
-        const y = headerY + 40 + (index * 30);
-        const rank = (index + 1).toString().padStart(2, ' ');
+        const y = headerY + 40 + (index * rowSpacing);
+        const rank = (index + 1).toString();
+        
         let displayName;
         if (entry.username === 'Anonymous') {
           displayName = 'Anonymous';
         } else if (entry.username.startsWith('Player_')) {
-          displayName = entry.username; // Show Player_123456 as is
+          displayName = entry.username;
         } else {
-          displayName = `u/${entry.username}`; // Reddit users get u/ prefix
+          displayName = `u/${entry.username}`;
         }
-        const username = displayName.substring(0, 17).padEnd(17, ' ');
-        const score = entry.score.toString().padStart(8, ' ');
-        const level = entry.level.toString().padStart(5, ' ');
-        const lines = entry.lines.toString().padStart(5, ' ');
         
-        const entryText = `${rank}    ${username}  ${score}    ${level}    ${lines}`;
+        // Truncate long usernames to fit column width - adjusted for new column width
+        const maxUsernameLength = isMobile ? 16 : 20;  // Adjusted for new column widths
+        const username = displayName.length > maxUsernameLength ? 
+          displayName.substring(0, maxUsernameLength) + '...' : 
+          displayName;
         
         const color = index === 0 ? '#FFD700' : // Gold for 1st
                      index === 1 ? '#C0C0C0' : // Silver for 2nd  
                      index === 2 ? '#CD7F32' : // Bronze for 3rd
                      '#FFFFFF'; // White for others
 
-        const textObj = this.add.text(width / 2, y, entryText, {
+        // Create individual text elements for each column
+        const rankText = this.add.text(columnConfig.RANK.x, y, rank, {
           fontFamily: 'Courier New',
-          fontSize: '16px', // Increased from 12px for better mobile readability
+          fontSize: entryFontSize,
           color: color,
           stroke: '#000000',
           strokeThickness: 1,
           align: 'center'
         }).setOrigin(0.5);
         
-        this.leaderboardEntries.push(textObj);
+        const userText = this.add.text(columnConfig.USER.x, y, username, {
+          fontFamily: 'Courier New',
+          fontSize: entryFontSize,
+          color: '#FFFFFF',
+          stroke: '#000000',
+          strokeThickness: 1,
+          align: 'center'
+        }).setOrigin(0.5);
+        
+        const scoreText = this.add.text(columnConfig.SCORE.x, y, entry.score.toString(), {
+          fontFamily: 'Courier New',
+          fontSize: entryFontSize,
+          color: color,
+          stroke: '#000000',
+          strokeThickness: 1,
+          align: 'center'
+        }).setOrigin(0.5);
+        
+        const levelText = this.add.text(columnConfig.LEVEL.x, y, entry.level.toString(), {
+          fontFamily: 'Courier New',
+          fontSize: entryFontSize,
+          color: color,
+          stroke: '#000000',
+          strokeThickness: 1,
+          align: 'center'
+        }).setOrigin(0.5);
+        
+        const linesText = this.add.text(columnConfig.LINES.x, y, entry.lines.toString(), {
+          fontFamily: 'Courier New',
+          fontSize: entryFontSize,
+          color: color,
+          stroke: '#000000',
+          strokeThickness: 1,
+          align: 'center'
+        }).setOrigin(0.5);
+        
+        this.leaderboardEntries.push(rankText, userText, scoreText, levelText, linesText);
 
         // Add crown for first place
         if (index === 0) {
-          const crown = this.add.text(width / 2 - 220, y, '👑', {
-            fontSize: '16px'
+          const crown = this.add.text(columnConfig.RANK.x - 25, y, '👑', {
+            fontSize: entryFontSize
           }).setOrigin(0.5);
           this.leaderboardEntries.push(crown);
         }
       });
 
-      // Add last updated timestamp
-      const lastUpdated = this.add.text(width / 2, headerY + 40 + (leaderboard.length * 30) + 20, 
+      // Add last updated timestamp with mobile-responsive font size
+      const lastUpdated = this.add.text(width / 2, headerY + 40 + (leaderboard.length * rowSpacing) + 20, 
         `Last updated: ${new Date().toLocaleTimeString()}`, {
-        fontFamily: 'Arial',
-        fontSize: '10px',
+        fontFamily: 'Courier New',
+        fontSize: isMobile ? '14px' : '12px',
         color: '#888888',
+        stroke: '#000000',
+        strokeThickness: 1,
         align: 'center'
       }).setOrigin(0.5);
       
@@ -239,7 +347,7 @@ export class Leaderboard extends Scene {
 
       const errorText = this.add.text(width / 2, 200, 'Failed to load leaderboard.\n\nYour score was submitted successfully!\nPress R to retry or refresh the page.', {
         fontFamily: 'Arial Bold',
-        fontSize: '14px',
+        fontSize: isMobile ? '18px' : '14px',
         color: '#FF0000',
         stroke: '#FFFFFF',
         strokeThickness: 1,

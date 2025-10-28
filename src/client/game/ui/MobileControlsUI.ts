@@ -16,7 +16,7 @@ export interface MobileControlsConfig {
   bottomMargin: number;
   hapticFeedback: boolean;
   visualFeedback: boolean;
-  layout: 'horizontal' | 'gamepad' | 'enhanced';
+  layout: 'horizontal' | 'gamepad' | 'enhanced' | 'wood-dpad';
   neonStyle: boolean;
 }
 
@@ -59,6 +59,8 @@ export class MobileControlsUI {
       this.createHorizontalLayout(width);
     } else if (this.config.layout === 'gamepad') {
       this.createGamepadLayout(width);
+    } else if (this.config.layout === 'wood-dpad') {
+      this.createWoodDPadLayout(width, height);
     } else {
       this.createEnhancedLayout(width, height);
     }
@@ -235,7 +237,252 @@ export class MobileControlsUI {
     this.createBeaverMascot(screenWidth, screenHeight);
   }
 
-  private createMobileButton(config: MobileButtonConfig): MobileButton {
+  private createWoodDPadLayout(screenWidth: number, screenHeight: number): void {
+    const buttonSize = 50;
+    const dPadSpacing = buttonSize * 1.05; // Much more spacing (1.05 = buttons don't overlap at all)
+    const dPadSize = (buttonSize * 0.5 + dPadSpacing) * 2; // Overall D-Pad size based on spacing
+    
+    // Position controls on RIGHT SIDE of screen, BELOW the water timer
+    // Get water timer position from the scene
+    const scene = this.scene as any;
+    const isMobile = screenWidth < 600;
+    const isFullscreen = screenWidth > 1200;
+    
+    // Match timer positioning logic from EnhancedGame
+    let timerX: number;
+    let timerY: number;
+    let timerRadius: number;
+    
+    if (isMobile) {
+      timerX = screenWidth - 50;
+      timerY = 180;
+      timerRadius = 25;
+    } else if (isFullscreen) {
+      timerX = screenWidth - 100;
+      timerY = 150;
+      timerRadius = 40;
+    } else {
+      timerX = screenWidth - 70;
+      timerY = 180;
+      timerRadius = 32;
+    }
+    
+    // Position D-Pad below the water timer, on the right side
+    // Move down by 80-100px and left by 20-30px as requested
+    const padding = 20;
+    const dPadAbsX = timerX - 25; // Move left by 25px (decrease X)
+    const dPadAbsY = timerY + timerRadius + 115; // Move down by 115px (slightly more spacing for less clutter)
+    
+    // Ensure controls stay within canvas bounds
+    const minX = dPadSize * 0.5 + padding; // Left boundary
+    const maxX = screenWidth - dPadSize * 0.5 - padding; // Right boundary
+    const minY = dPadSize * 0.5 + padding; // Top boundary
+    const maxY = screenHeight - this.config.bottomMargin - dPadSize * 0.5 - padding; // Bottom boundary (accounting for container offset)
+    
+    // Clamp positions to stay within bounds
+    const clampedX = Math.max(minX, Math.min(dPadAbsX, maxX));
+    const clampedY = Math.max(minY, Math.min(dPadAbsY, maxY + (screenHeight - this.config.bottomMargin))); // Account for relative positioning
+    
+    // Container is positioned at (0, screenHeight - bottomMargin), so convert absolute to relative
+    const dPadContainerX = clampedX;
+    const dPadContainerY = clampedY - (screenHeight - this.config.bottomMargin);
+    const dPadCenterX = 0;
+    const dPadCenterY = 0;
+    
+    // Create modern D-Pad container
+    const dPadContainer = this.scene.add.container(dPadContainerX, dPadContainerY);
+    this.createModernDPadBackground(dPadContainer, dPadSize);
+    this.container!.add(dPadContainer);
+    
+    // Create modern D-Pad buttons in cross pattern with MORE SPACING: Rotate (top), Left, Right, Down
+    const dPadButtonConfigs: Array<{action: InputAction, symbol: string, offsetX: number, offsetY: number}> = [
+      { action: InputAction.ROTATE, symbol: '↻', offsetX: 0, offsetY: -dPadSpacing },      // Top
+      { action: InputAction.MOVE_LEFT, symbol: '←', offsetX: -dPadSpacing, offsetY: 0 },   // Left
+      { action: InputAction.MOVE_RIGHT, symbol: '→', offsetX: dPadSpacing, offsetY: 0 },  // Right
+      { action: InputAction.SOFT_DROP, symbol: '↓', offsetX: 0, offsetY: dPadSpacing }    // Bottom
+    ];
+    
+    dPadButtonConfigs.forEach(btnConfig => {
+      const buttonConfig: MobileButtonConfig = {
+        action: btnConfig.action,
+        symbol: btnConfig.symbol,
+        color: 0x66D9EF, // Cyan for modern theme
+        size: buttonSize,
+        position: { 
+          x: dPadCenterX + btnConfig.offsetX, 
+          y: dPadCenterY + btnConfig.offsetY 
+        }
+      };
+      
+      const button = this.createMobileButton(buttonConfig, false, false); // Modern theme, not wood
+      this.buttons.set(buttonConfig.action, button);
+      dPadContainer.add(button.container);
+    });
+    
+    // Create "MOVE" label below D-Pad (optional, smaller)
+    const moveLabel = this.scene.add.text(
+      dPadCenterX, 
+      dPadCenterY + dPadSize * 0.5 + 12, 
+      'MOVE', 
+      {
+        fontFamily: 'Arial',
+        fontSize: '11px',
+        color: '#FFFFFF',
+        stroke: '#000000',
+        strokeThickness: 1
+      }
+    ).setOrigin(0.5);
+    dPadContainer.add(moveLabel);
+    
+    // Create Drop button DIRECTLY BELOW D-Pad center (perfectly aligned)
+    const dropButtonAbsX = clampedX; // Same X as clamped D-Pad center
+    const dropButtonAbsY = clampedY + dPadSize * 0.5 + 25 + buttonSize * 0.5; // Directly below D-Pad with spacing
+    
+    // Ensure drop button stays within bounds
+    const dropButtonMinY = buttonSize * 0.5 + padding;
+    const dropButtonMaxY = screenHeight - this.config.bottomMargin - buttonSize * 0.5 - padding;
+    const dropButtonClampedY = Math.max(dropButtonMinY, Math.min(dropButtonAbsY, dropButtonMaxY + (screenHeight - this.config.bottomMargin)));
+    
+    // Convert to relative positioning
+    const dropButtonX = dropButtonAbsX;
+    const dropButtonY = dropButtonClampedY - (screenHeight - this.config.bottomMargin);
+    
+    const dropButtonConfig: MobileButtonConfig = {
+      action: InputAction.HARD_DROP,
+      symbol: '↓',
+      color: 0x66D9EF,
+      size: buttonSize,
+      position: { x: dropButtonX, y: dropButtonY }
+    };
+    
+    const dropButton = this.createMobileButton(dropButtonConfig, false, true); // Modern theme, drop button
+    this.buttons.set(dropButtonConfig.action, dropButton);
+    this.container!.add(dropButton.container);
+    
+    // Create "DROP" label below drop button (centered with button)
+    const dropLabel = this.scene.add.text(
+      dropButtonX,
+      dropButtonY + buttonSize * 0.5 + 12,
+      'DROP',
+      {
+        fontFamily: 'Arial',
+        fontSize: '11px',
+        color: '#FFFFFF',
+        stroke: '#000000',
+        strokeThickness: 1
+      }
+    ).setOrigin(0.5);
+    this.container!.add(dropLabel);
+  }
+
+  private createModernDPadBackground(container: Phaser.GameObjects.Container, dPadSize: number): void {
+    const graphics = this.scene.add.graphics();
+    const radius = dPadSize / 2;
+    
+    // Outer metallic ring with beveled 3D effect
+    // Base metallic color
+    const metallicBase = 0x888888; // Silver grey
+    const metallicLight = 0xCCCCCC; // Light highlight
+    const metallicDark = 0x555555; // Dark shadow
+    
+    // Outer ring (thick, metallic)
+    graphics.fillStyle(metallicDark, 1.0);
+    graphics.fillCircle(0, 0, radius);
+    
+    graphics.fillStyle(metallicBase, 1.0);
+    graphics.fillCircle(0, 0, radius - 3);
+    
+    // Metallic highlight (top-left)
+    graphics.fillStyle(metallicLight, 0.8);
+    graphics.fillCircle(-radius * 0.3, -radius * 0.3, radius * 0.4);
+    
+    // Inner dark teal circle (deep cyan)
+    const innerRadius = radius - 12; // Thickness of ring
+    const tealColor = 0x1A4A5C; // Dark teal/cyan
+    graphics.fillStyle(tealColor, 1.0);
+    graphics.fillCircle(0, 0, innerRadius);
+    
+    // Subtle gradient effect (lighter on top-left)
+    graphics.fillStyle(0x2C6B80, 0.4); // Lighter teal
+    graphics.fillCircle(-innerRadius * 0.3, -innerRadius * 0.3, innerRadius * 0.6);
+    
+    // Cyan glow around outer ring
+    graphics.lineStyle(2, 0x66D9EF, 0.6); // Bright cyan glow
+    graphics.strokeCircle(0, 0, radius + 2);
+    
+    // Inner highlight ring
+    graphics.lineStyle(1, 0x4DFFFF, 0.4);
+    graphics.strokeCircle(0, 0, innerRadius - 2);
+    
+    // Subtle digital/data effect (small horizontal dashes)
+    graphics.fillStyle(0x66D9EF, 0.5);
+    const dashY = -innerRadius * 0.4;
+    const dashWidth = 8;
+    const dashHeight = 2;
+    const dashSpacing = 3;
+    for (let i = 0; i < 3; i++) {
+      const dashX = -innerRadius * 0.3 + (i * (dashWidth + dashSpacing));
+      graphics.fillRect(dashX, dashY, dashWidth, dashHeight);
+    }
+    
+    container.add(graphics);
+  }
+
+  private createWoodDPadBackground(container: Phaser.GameObjects.Container, buttonSize: number, spacing: number): void {
+    const graphics = this.scene.add.graphics();
+    
+    // Calculate D-Pad container size (spacing * 2 + buttonSize for each dimension)
+    const containerWidth = spacing * 2 + buttonSize;
+    const containerHeight = spacing * 2 + buttonSize;
+    const halfWidth = containerWidth / 2;
+    const halfHeight = containerHeight / 2;
+    const borderRadius = 15;
+    
+    // Wood background (dark brown, semi-transparent)
+    const woodBaseColor = 0x4A3728; // Dark wood brown
+    graphics.fillStyle(woodBaseColor, 0.85);
+    graphics.fillRoundedRect(-halfWidth, -halfHeight, containerWidth, containerHeight, borderRadius);
+    
+    // Subtle wood grain texture (horizontal lines)
+    graphics.lineStyle(1, 0x2E2419, 0.2);
+    const grainLines = 4;
+    for (let i = 1; i < grainLines; i++) {
+      const y = -halfHeight + (containerHeight / grainLines) * i;
+      graphics.moveTo(-halfWidth + 5, y);
+      graphics.lineTo(halfWidth - 5, y);
+    }
+    graphics.strokePath();
+    
+    // Cyan border outline (3px)
+    graphics.lineStyle(3, 0x66D9EF, 1.0);
+    graphics.strokeRoundedRect(-halfWidth, -halfHeight, containerWidth, containerHeight, borderRadius);
+    
+    // Inner border for depth
+    graphics.lineStyle(1, 0x66D9EF, 0.6);
+    graphics.strokeRoundedRect(-halfWidth + 2, -halfHeight + 2, containerWidth - 4, containerHeight - 4, borderRadius - 2);
+    
+    // Subtle beaver watermark (tiny paw print in corners - very low opacity)
+    const pawSize = 8;
+    const cornerOffset = 10;
+    const pawOpacity = 0.05;
+    
+    // Top-left corner
+    graphics.fillStyle(0xDAA520, pawOpacity);
+    graphics.fillCircle(-halfWidth + cornerOffset, -halfHeight + cornerOffset, pawSize);
+    
+    // Top-right corner
+    graphics.fillCircle(halfWidth - cornerOffset, -halfHeight + cornerOffset, pawSize);
+    
+    // Bottom-left corner
+    graphics.fillCircle(-halfWidth + cornerOffset, halfHeight - cornerOffset, pawSize);
+    
+    // Bottom-right corner
+    graphics.fillCircle(halfWidth - cornerOffset, halfHeight - cornerOffset, pawSize);
+    
+    container.add(graphics);
+  }
+
+  private createMobileButton(config: MobileButtonConfig, useWoodTheme: boolean = false, isDropButton: boolean = false): MobileButton {
     return new MobileButton(
       this.scene,
       config,
@@ -244,7 +491,9 @@ export class MobileControlsUI {
         if (this.onButtonPress) {
           this.onButtonPress(action);
         }
-      }
+      },
+      useWoodTheme,
+      isDropButton
     );
   }
 
@@ -288,6 +537,8 @@ export class MobileControlsUI {
       this.createHorizontalLayout(gameSize.width);
     } else if (this.config.layout === 'gamepad') {
       this.createGamepadLayout(gameSize.width);
+    } else if (this.config.layout === 'wood-dpad') {
+      this.createWoodDPadLayout(gameSize.width, gameSize.height);
     } else {
       this.createEnhancedLayout(gameSize.width, gameSize.height);
     }
@@ -390,6 +641,8 @@ class MobileButton {
   private config: MobileButtonConfig;
   private controlsConfig: MobileControlsConfig;
   private onPress: (action: InputAction) => void;
+  private useWoodTheme: boolean = false;
+  private isDropButton: boolean = false;
   
   private background: Phaser.GameObjects.Graphics;
   private icon: Phaser.GameObjects.Text;
@@ -402,12 +655,16 @@ class MobileButton {
     scene: Phaser.Scene,
     config: MobileButtonConfig,
     controlsConfig: MobileControlsConfig,
-    onPress: (action: InputAction) => void
+    onPress: (action: InputAction) => void,
+    useWoodTheme: boolean = false,
+    isDropButton: boolean = false
   ) {
     this.scene = scene;
     this.config = config;
     this.controlsConfig = controlsConfig;
     this.onPress = onPress;
+    this.useWoodTheme = useWoodTheme;
+    this.isDropButton = isDropButton;
     
     this.container = scene.add.container(config.position.x, config.position.y);
     
@@ -427,8 +684,14 @@ class MobileButton {
     this.container.add(this.pressEffect);
     
     // Create icon with enhanced styling
-    const iconColor = this.controlsConfig.neonStyle ? 
-      `#${this.config.color.toString(16).padStart(6, '0')}` : '#FFFFFF';
+    let iconColor: string;
+    if (this.useWoodTheme) {
+      iconColor = '#66D9EF'; // Cyan for wood theme
+    } else if (this.controlsConfig.neonStyle) {
+      iconColor = `#${this.config.color.toString(16).padStart(6, '0')}`;
+    } else {
+      iconColor = '#FFFFFF'; // White for modern theme (will stand out on dark buttons)
+    }
     
     this.icon = this.scene.add.text(0, 0, this.config.symbol, {
       fontFamily: 'Arial Black',
@@ -446,7 +709,70 @@ class MobileButton {
     
     this.background.clear();
     
-    if (this.controlsConfig.neonStyle) {
+    if (this.useWoodTheme) {
+      // Wood theme button styling
+      const borderRadius = 12;
+      
+      // Base wood color (light wood when not pressed, darker when pressed)
+      const woodBaseColor = pressed ? 0xD2B48C : 0xE0C896; // Darker wood when pressed
+      const woodDarkColor = 0xBC9A6A;
+      const woodLightColor = 0xF5DEB3;
+      const cyanGlow = pressed ? 0x4DFFFF : 0x66D9EF; // Brighter cyan when pressed
+      
+      // Shadow/depth effect (bottom-right)
+      this.background.fillStyle(woodDarkColor, 0.8);
+      this.background.fillRoundedRect(-halfSize + 2, -halfSize + 2, size - 4, size - 4, borderRadius);
+      
+      // Main button body with wood color
+      this.background.fillStyle(woodBaseColor, 1.0);
+      this.background.fillRoundedRect(-halfSize, -halfSize, size, size, borderRadius);
+      
+      // Wood grain texture (horizontal lines)
+      if (size > 30) {
+        this.background.lineStyle(1, woodDarkColor, 0.3);
+        const grainLines = 3;
+        for (let i = 1; i < grainLines; i++) {
+          const lineY = -halfSize + (size / grainLines) * i;
+          this.background.moveTo(-halfSize + 3, lineY);
+          this.background.lineTo(halfSize - 3, lineY);
+        }
+        this.background.strokePath();
+      }
+      
+      // Stronger highlights for 3D effect (top-left)
+      this.background.fillStyle(woodLightColor, 0.8);
+      this.background.fillRect(-halfSize, -halfSize, size, 4); // Top - 4px thick
+      this.background.fillRect(-halfSize, -halfSize, 4, size); // Left - 4px thick
+      
+      // Stronger shadows for depth (bottom-right)
+      this.background.fillStyle(woodDarkColor, 0.7);
+      this.background.fillRect(halfSize - 4, -halfSize + 2, 4, size - 2); // Right - 4px
+      this.background.fillRect(-halfSize + 2, halfSize - 4, size - 2, 4); // Bottom - 4px
+      
+      // Cyan border/glow effect
+      // Outer soft glow
+      this.background.lineStyle(3, cyanGlow, 0.3);
+      this.background.strokeRoundedRect(-halfSize - 1, -halfSize - 1, size + 2, size + 2, borderRadius + 1);
+      
+      // Main border
+      this.background.lineStyle(2, cyanGlow, 0.6);
+      this.background.strokeRoundedRect(-halfSize, -halfSize, size, size, borderRadius);
+      
+      // Inner accent
+      this.background.lineStyle(1, cyanGlow, 0.4);
+      this.background.strokeRoundedRect(-halfSize + 2, -halfSize + 2, size - 4, size - 4, borderRadius - 2);
+      
+      // Subtle corner highlights for elevated appearance
+      this.background.fillStyle(cyanGlow, 0.15);
+      this.background.fillRect(-halfSize + 1, -halfSize + 1, 2, 2); // Top-left corner
+      this.background.fillRect(halfSize - 3, -halfSize + 1, 2, 2); // Top-right corner
+      
+      // Drop button gets golden accent
+      if (this.isDropButton && pressed) {
+        this.background.fillStyle(0xDAA520, 0.2); // Golden beaver accent
+        this.background.fillRoundedRect(-halfSize + 3, -halfSize + 3, size - 6, size - 6, borderRadius - 3);
+      }
+    } else if (this.controlsConfig.neonStyle) {
       // Enhanced neon square design
       const baseColor = pressed ? 0x000000 : 0x111111;
       const borderColor = this.config.color;
@@ -476,29 +802,46 @@ class MobileButton {
         this.background.fillRoundedRect(-halfSize + 2, -halfSize + 2, size - 4, size * 0.3, 3);
       }
     } else {
-      // Fallback to circular design for non-neon style
+      // Modern sleek button design (circular, minimalist)
       const radius = halfSize;
-      const color = pressed ? 
-        Phaser.Display.Color.GetColor32(50, 50, 50, 255) : this.config.color;
+      const borderRadius = 10;
       
-      // Outer glow effect
+      // Modern button: dark background with subtle transparency
+      const buttonDark = pressed ? 0x1A1A2E : 0x2A2A4E; // Dark blue-grey, darker when pressed
+      const buttonMid = 0x36365A;
+      const cyanGlow = pressed ? 0x4DFFFF : 0x66D9EF;
+      
+      // Subtle outer glow when not pressed
       if (!pressed) {
-        this.background.fillStyle(this.config.color, 0.3);
-        this.background.fillCircle(0, 0, radius + 4);
+        this.background.fillStyle(cyanGlow, 0.15);
+        this.background.fillCircle(0, 0, radius + 3);
       }
       
-      // Main button
-      this.background.fillStyle(color);
-      this.background.fillCircle(0, 0, radius);
+      // Main button body (rounded square for modern look)
+      this.background.fillStyle(buttonDark, 0.9);
+      this.background.fillRoundedRect(-halfSize, -halfSize, size, size, borderRadius);
       
-      // Border
-      this.background.lineStyle(3, 0xFFFFFF, 0.8);
-      this.background.strokeCircle(0, 0, radius);
-      
-      // Inner highlight
+      // Subtle gradient highlight (top-left)
       if (!pressed) {
-        this.background.fillStyle(0xFFFFFF, 0.2);
-        this.background.fillCircle(0, -radius * 0.3, radius * 0.6);
+        this.background.fillStyle(buttonMid, 0.4);
+        this.background.fillRoundedRect(-halfSize, -halfSize, size * 0.6, size * 0.6, borderRadius);
+      }
+      
+      // Cyan border (thin, sleek)
+      this.background.lineStyle(2, cyanGlow, pressed ? 0.8 : 0.6);
+      this.background.strokeRoundedRect(-halfSize, -halfSize, size, size, borderRadius);
+      
+      // Inner accent ring
+      this.background.lineStyle(1, cyanGlow, 0.3);
+      this.background.strokeRoundedRect(-halfSize + 2, -halfSize + 2, size - 4, size - 4, borderRadius - 2);
+      
+      // Drop button gets slightly different treatment
+      if (this.isDropButton) {
+        // Slightly brighter when pressed
+        if (pressed) {
+          this.background.fillStyle(0x4DFFFF, 0.2);
+          this.background.fillRoundedRect(-halfSize + 3, -halfSize + 3, size - 6, size - 6, borderRadius - 3);
+        }
       }
     }
   }
@@ -512,7 +855,8 @@ class MobileButton {
     let hitArea: Phaser.Geom.Rectangle | Phaser.Geom.Circle;
     let containsFunction: Phaser.Types.Input.HitAreaCallback;
     
-    if (this.controlsConfig.neonStyle) {
+    // Use rectangles for modern and neon styles, circles only for old fallback
+    if (this.controlsConfig.neonStyle || !this.useWoodTheme) {
       hitArea = new Phaser.Geom.Rectangle(-halfHitSize, -halfHitSize, hitAreaSize, hitAreaSize);
       containsFunction = Phaser.Geom.Rectangle.Contains;
     } else {

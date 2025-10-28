@@ -246,10 +246,24 @@ export class EnhancedGame extends Scene {
     // Beaver character and messages
     this.createBeaverUI();
     
-    // Mobile controls if needed
+    // Mobile controls if needed - using wood D-Pad theme
     const deviceInfo = this.layoutSystem.getDeviceInfo();
     if (deviceInfo.type === 'mobile' || deviceInfo.isTouchDevice) {
-      this.mobileControlsUI = new MobileControlsUI(this, this.layoutSystem);
+      this.mobileControlsUI = new MobileControlsUI(this, {
+        buttonSize: 55, // Touch-friendly size
+        buttonSpacing: 15,
+        bottomMargin: 60, // Space from bottom
+        hapticFeedback: true,
+        visualFeedback: true,
+        layout: 'wood-dpad', // Use our new wood D-Pad layout
+        neonStyle: false // Use wood theme instead
+      });
+      this.mobileControlsUI.create((action: InputAction) => {
+        this.handleInput(action);
+      });
+      
+      // Hide controls initially - will show when gameplay starts
+      this.mobileControlsUI.setVisible(false);
     }
   }
 
@@ -610,6 +624,11 @@ export class EnhancedGame extends Scene {
     
     // Start the water timer (match grace period duration)
     this.futuristicTimer.start(30000); // 30 seconds to match grace period
+    
+    // Show mobile controls when gameplay actually starts
+    if (this.mobileControlsUI) {
+      this.mobileControlsUI.setVisible(true);
+    }
     
     console.log('🎮 Actual gameplay setup complete!');
   }
@@ -1232,6 +1251,12 @@ export class EnhancedGame extends Scene {
   }
 
   update(time: number, delta: number): void {
+    // Hide/show controls based on game state
+    if (this.mobileControlsUI) {
+      const shouldShowControls = !this.isGameOver && !this.isPaused && this.gameStateManager.getState().currentPiece !== null;
+      this.mobileControlsUI.setVisible(shouldShowControls);
+    }
+    
     if (this.isGameOver || this.isPaused) {
       return;
     }
@@ -1499,6 +1524,12 @@ export class EnhancedGame extends Scene {
           storyContainer.destroy();
           this.isPaused = false;
           console.log('🎮 Resuming gameplay after story');
+          
+          // Show mobile controls again when story is dismissed
+          if (this.mobileControlsUI) {
+            this.mobileControlsUI.setVisible(true);
+          }
+          
           // Resume gameplay without resetting the game state
           this.resumeGameplay();
         }
@@ -1520,6 +1551,11 @@ export class EnhancedGame extends Scene {
       storyText,
       continueBtn
     ]);
+    
+    // Hide mobile controls when story screen is shown
+    if (this.mobileControlsUI) {
+      this.mobileControlsUI.setVisible(false);
+    }
     
     // Animate in
     storyContainer.setAlpha(0).setScale(0.8);

@@ -199,6 +199,9 @@ router.get('/api/leaderboard', async (_req, res): Promise<void> => {
 
 router.post('/api/submit-score', async (req, res): Promise<void> => {
   try {
+    console.log('Score submission request received:', req.body);
+    console.log('Devvit context:', { userId: context.userId, postId: context.postId });
+    
     const { score, level, lines } = req.body;
     const { userId } = context;
 
@@ -336,6 +339,7 @@ router.post('/api/submit-score', async (req, res): Promise<void> => {
 
 router.post('/api/submit-anonymous', async (req, res): Promise<void> => {
   try {
+    console.log('Anonymous score submission request received:', req.body);
     const { score, level, lines } = req.body;
 
     if (typeof score !== 'number' || typeof level !== 'number' || typeof lines !== 'number') {

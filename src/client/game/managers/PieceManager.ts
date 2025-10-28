@@ -11,7 +11,7 @@ export class PieceManager {
     return {
       [PieceType.I]: {
         shape: [[1, 1, 1, 1]],
-        color: 0x8B4513, // Brown log
+        color: 0x8B4513, // Saddle brown - thick log
         rotationStates: [
           [[1, 1, 1, 1]],
           [[1], [1], [1], [1]],
@@ -21,7 +21,7 @@ export class PieceManager {
       },
       [PieceType.O]: {
         shape: [[1, 1], [1, 1]],
-        color: 0xD2691E, // Orange stump
+        color: 0xCD853F, // Peru - tree stump cross-section
         rotationStates: [
           [[1, 1], [1, 1]],
           [[1, 1], [1, 1]],
@@ -31,7 +31,7 @@ export class PieceManager {
       },
       [PieceType.T]: {
         shape: [[0, 1, 0], [1, 1, 1]],
-        color: 0x654321, // Dark brown branch
+        color: 0xDEB887, // Burlywood - main branch with shoots
         rotationStates: [
           [[0, 1, 0], [1, 1, 1]],
           [[1, 0], [1, 1], [1, 0]],
@@ -41,7 +41,7 @@ export class PieceManager {
       },
       [PieceType.S]: {
         shape: [[0, 1, 1], [1, 1, 0]],
-        color: 0x228B22, // Forest green leaves
+        color: 0x228B22, // Forest green - leafy branch
         rotationStates: [
           [[0, 1, 1], [1, 1, 0]],
           [[1, 0], [1, 1], [0, 1]],
@@ -51,7 +51,7 @@ export class PieceManager {
       },
       [PieceType.Z]: {
         shape: [[1, 1, 0], [0, 1, 1]],
-        color: 0x32CD32, // Lime green moss
+        color: 0x90EE90, // Light green - young leafy branch
         rotationStates: [
           [[1, 1, 0], [0, 1, 1]],
           [[0, 1], [1, 1], [1, 0]],
@@ -61,7 +61,7 @@ export class PieceManager {
       },
       [PieceType.L]: {
         shape: [[1, 0, 0], [1, 1, 1]],
-        color: 0xA0522D, // Sienna bark
+        color: 0xDAA520, // Goldenrod - bent branch
         rotationStates: [
           [[1, 0, 0], [1, 1, 1]],
           [[1, 1], [1, 0], [1, 0]],
@@ -71,7 +71,7 @@ export class PieceManager {
       },
       [PieceType.J]: {
         shape: [[0, 0, 1], [1, 1, 1]],
-        color: 0x8FBC8F, // Dark sea green twig
+        color: 0xA0522D, // Sienna - curved branch with bark
         rotationStates: [
           [[0, 0, 1], [1, 1, 1]],
           [[1, 0], [1, 0], [1, 1]],
@@ -84,7 +84,7 @@ export class PieceManager {
 
   public createRandomPiece(): GamePiece {
     const pieceTypes = Object.values(PieceType);
-    const randomType = pieceTypes[Math.floor(Math.random() * pieceTypes.length)];
+    const randomType = pieceTypes[Math.floor(Math.random() * pieceTypes.length)] as PieceType;
     return this.createPiece(randomType);
   }
 
@@ -126,6 +126,9 @@ export class PieceManager {
       : (currentStateIndex + 3) % 4;
 
     const nextShape = definition.rotationStates[nextStateIndex];
+    if (!nextShape) {
+      return this.rotatePieceMatrix(piece, clockwise);
+    }
     
     return {
       ...piece,
@@ -194,7 +197,8 @@ export class PieceManager {
 
           // Only place if within bounds and above the board top
           if (boardY >= 0 && boardY < newBoard.length && 
-              boardX >= 0 && boardX < newBoard[0].length) {
+              boardX >= 0 && boardX < (newBoard[0]?.length || 0) && 
+              newBoard[boardY]) {
             newBoard[boardY][boardX] = piece.color;
           }
         }
@@ -265,8 +269,8 @@ export class PieceManager {
         const row = matrix[i];
         if (!row) continue;
         for (let j = 0; j < cols; j++) {
-          if (row[j] !== undefined) {
-            rotated[j][rows - 1 - i] = row[j];
+          if (row[j] !== undefined && rotated[j]) {
+            rotated[j]![rows - 1 - i] = row[j]!;
           }
         }
       }
@@ -276,8 +280,8 @@ export class PieceManager {
         const row = matrix[i];
         if (!row) continue;
         for (let j = 0; j < cols; j++) {
-          if (row[j] !== undefined) {
-            rotated[cols - 1 - j][i] = row[j];
+          if (row[j] !== undefined && rotated[cols - 1 - j]) {
+            rotated[cols - 1 - j]![i] = row[j]!;
           }
         }
       }

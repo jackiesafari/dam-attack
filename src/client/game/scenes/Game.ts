@@ -86,7 +86,7 @@ export class Game extends Scene {
   
   // Game board
   private board: number[][] = [];
-  private readonly boardWidth = 10;
+  private readonly boardWidth = 14;
   private readonly boardHeight = 20;
   private readonly cellSize = 25;
   private readonly boardX = 300;
@@ -220,7 +220,7 @@ export class Game extends Scene {
     
     // Initial welcome message from beaver
     this.time.delayedCall(1000, () => {
-      this.showRandomEncouragement("Welcome, builder! Let's build an amazing dam together!");
+      this.showRandomEncouragement("Welcome! Let's build a dam together!");
     });
   }
 

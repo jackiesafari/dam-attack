@@ -22,7 +22,7 @@ export class GameStateManager {
   private state: GameState;
   private listeners: StateListener[] = [];
 
-  constructor(boardWidth: number = 10, boardHeight: number = 20) {
+  constructor(boardWidth: number = 14, boardHeight: number = 20) {
     this.state = this.createInitialState(boardWidth, boardHeight);
   }
 

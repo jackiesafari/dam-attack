@@ -100,7 +100,7 @@ describe('PieceManager', () => {
     let board: number[][];
 
     beforeEach(() => {
-      board = Array(20).fill(null).map(() => Array(10).fill(0));
+      board = Array(20).fill(null).map(() => Array(14).fill(0));
     });
 
     it('should detect no collision in empty space', () => {
@@ -118,7 +118,7 @@ describe('PieceManager', () => {
     });
 
     it('should detect right boundary collision', () => {
-      const piece = pieceManager.createPiece(PieceType.T, 9, 5);
+      const piece = pieceManager.createPiece(PieceType.T, 13, 5);
       const hasCollision = pieceManager.checkCollision(piece, board);
       
       expect(hasCollision).toBe(true);
@@ -141,7 +141,7 @@ describe('PieceManager', () => {
 
     it('should check collision with offset', () => {
       const piece = pieceManager.createPiece(PieceType.T, 5, 5);
-      const hasCollision = pieceManager.checkCollision(piece, board, -6, 0);
+      const hasCollision = pieceManager.checkCollision(piece, board, -10, 0);
       
       expect(hasCollision).toBe(true); // Would go out of left boundary
     });
@@ -158,7 +158,7 @@ describe('PieceManager', () => {
     let board: number[][];
 
     beforeEach(() => {
-      board = Array(20).fill(null).map(() => Array(10).fill(0));
+      board = Array(20).fill(null).map(() => Array(14).fill(0));
     });
 
     it('should place piece on board correctly', () => {
@@ -190,7 +190,7 @@ describe('PieceManager', () => {
     let board: number[][];
 
     beforeEach(() => {
-      board = Array(20).fill(null).map(() => Array(10).fill(0));
+      board = Array(20).fill(null).map(() => Array(14).fill(0));
     });
 
     it('should perform wall kick when rotation would cause collision', () => {

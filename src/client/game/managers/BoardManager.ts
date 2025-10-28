@@ -10,7 +10,7 @@ export class BoardManager {
   private readonly boardWidth: number;
   private readonly boardHeight: number;
 
-  constructor(boardWidth: number = 10, boardHeight: number = 20) {
+  constructor(boardWidth: number = 14, boardHeight: number = 20) {
     this.boardWidth = boardWidth;
     this.boardHeight = boardHeight;
   }

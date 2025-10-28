@@ -1,6 +1,8 @@
 import { Boot } from './scenes/Boot';
 import { GameOver } from './scenes/GameOver';
 import { Game as MainGame } from './scenes/Game';
+import { EnhancedGame } from './scenes/EnhancedGame';
+import { LevelSelect } from './scenes/LevelSelect';
 import { MainMenu } from './scenes/MainMenu';
 import { Leaderboard } from './scenes/Leaderboard';
 import { UsernameInput } from './scenes/UsernameInput';
@@ -29,7 +31,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false
     }
   },
-  scene: [Boot, Preloader, MainMenu, MainGame, UsernameInput, GameOver, Leaderboard],
+  scene: [Boot, Preloader, MainMenu, MainGame, EnhancedGame, LevelSelect, UsernameInput, GameOver, Leaderboard],
 };
 
 const StartGame = (parent: string) => {

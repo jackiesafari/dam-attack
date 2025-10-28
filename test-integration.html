@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dam Attack - Integration Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #1a1a2e;
+            color: white;
+        }
+        .test-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px solid #00FFFF;
+            border-radius: 10px;
+            background: rgba(0, 255, 255, 0.1);
+        }
+        .test-title {
+            color: #00FFFF;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        .test-description {
+            color: #FFFFFF;
+            margin-bottom: 15px;
+        }
+        .test-button {
+            background: #00FFFF;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background: #FFFFFF;
+        }
+        .test-results {
+            margin-top: 15px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 5px;
+            font-family: monospace;
+        }
+        .game-frame {
+            width: 100%;
+            height: 600px;
+            border: 2px solid #00FFFF;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1 style="text-align: center; color: #00FFFF;">🌊 Dam Attack - Integration Test Suite</h1>
+        
+        <div class="test-section">
+            <div class="test-title">🎮 Game Integration Test</div>
+            <div class="test-description">
+                Test the Enhanced Game scene with seasonal and water level mechanics.
+                <br><strong>Expected Features:</strong>
+                <ul>
+                    <li>✅ Water level display with color-coded danger levels</li>
+                    <li>✅ Seasonal information display (Spring Thaw, Summer Flow, etc.)</li>
+                    <li>✅ Water rising continuously</li>
+                    <li>✅ Line clearing reduces water level by 10% per line</li>
+                    <li>✅ Game over when water reaches 100%</li>
+                    <li>✅ Splash effects when pieces are placed near water</li>
+                    <li>✅ Seasonal drop speed modifiers</li>
+                </ul>
+            </div>
+            <button class="test-button" onclick="startCampaignTest()">🚀 Start Campaign Mode Test</button>
+            <button class="test-button" onclick="startClassicTest()">⚡ Start Classic Mode Test</button>
+            <div id="test-results" class="test-results" style="display: none;">
+                <div id="test-output"></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">🧪 Test Instructions</div>
+            <div class="test-description">
+                <strong>Campaign Mode Testing:</strong>
+                <ol>
+                    <li>Click "Start Campaign Mode Test" to launch Enhanced Game</li>
+                    <li>Look for water level display (🌊 Water Level: X%) in top-left</li>
+                    <li>Look for season display (🌸 Spring Thaw - SPRING) below water level</li>
+                    <li>Place pieces and watch water level rise</li>
+                    <li>Clear lines and watch water level decrease</li>
+                    <li>Try to let water reach 100% to test game over</li>
+                </ol>
+                
+                <strong>Classic Mode Testing:</strong>
+                <ol>
+                    <li>Click "Start Classic Mode Test" to launch regular Game</li>
+                    <li>Verify it works without environmental systems</li>
+                    <li>Compare with campaign mode</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">📊 Test Results</div>
+            <div class="test-description">
+                Document any issues or observations here:
+            </div>
+            <textarea id="test-notes" style="width: 100%; height: 100px; background: #333; color: white; border: 1px solid #00FFFF; border-radius: 5px; padding: 10px;" placeholder="Enter test observations..."></textarea>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">🎯 Known Issues to Test</div>
+            <div class="test-description">
+                <ul>
+                    <li>❓ Does water level UI update in real-time?</li>
+                    <li>❓ Do splash effects appear when placing pieces?</li>
+                    <li>❓ Does line clearing reduce water level correctly?</li>
+                    <li>❓ Does game over trigger at 100% water level?</li>
+                    <li>❓ Are seasonal effects applied to piece drop speed?</li>
+                    <li>❓ Does the game restart properly after game over?</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function startCampaignTest() {
+            showTestResults();
+            logTest("🚀 Starting Campaign Mode Test...");
+            logTest("Expected: Enhanced Game with seasonal and water mechanics");
+            
+            // Open Enhanced Game in new tab
+            const gameUrl = "http://localhost:5173/?scene=EnhancedGame&mode=campaign&level=1";
+            window.open(gameUrl, '_blank');
+            
+            logTest("✅ Campaign mode launched in new tab");
+            logTest("🔍 Check for:");
+            logTest("  - Water level display (top-left)");
+            logTest("  - Season display (below water level)");
+            logTest("  - Rising water level");
+            logTest("  - Splash effects on piece placement");
+        }
+
+        function startClassicTest() {
+            showTestResults();
+            logTest("⚡ Starting Classic Mode Test...");
+            logTest("Expected: Regular Game without environmental systems");
+            
+            // Open regular Game in new tab
+            const gameUrl = "http://localhost:5173/?scene=Game";
+            window.open(gameUrl, '_blank');
+            
+            logTest("✅ Classic mode launched in new tab");
+            logTest("🔍 Verify classic mode works without environmental features");
+        }
+
+        function showTestResults() {
+            document.getElementById('test-results').style.display = 'block';
+        }
+
+        function logTest(message) {
+            const output = document.getElementById('test-output');
+            const timestamp = new Date().toLocaleTimeString();
+            output.innerHTML += `[${timestamp}] ${message}<br>`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        // Auto-start test results display
+        showTestResults();
+        logTest("🧪 Integration Test Suite Ready");
+        logTest("📡 Development server should be running on http://localhost:5173");
+        logTest("🎮 Click buttons above to start testing");
+    </script>
+</body>
+</html>

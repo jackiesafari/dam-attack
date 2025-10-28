@@ -3,7 +3,7 @@ import * as Phaser from 'phaser';
 import { LeaderboardEntry } from '../../../shared/types/api';
 
 // Game constants
-const BOARD_WIDTH = 10;
+const BOARD_WIDTH = 14;
 const BOARD_HEIGHT = 20;
 const PIECE_COLORS = [0x8B4513, 0xFF6347, 0x32CD32, 0x4169E1, 0x9370DB, 0xFFD700, 0xFF69B4];
 

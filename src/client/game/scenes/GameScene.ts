@@ -24,7 +24,7 @@ import { PerformanceMonitor } from '../performance/PerformanceMonitor';
 import { ErrorHandler } from '../utils/ErrorHandler';
 
 // Game constants
-const BOARD_WIDTH = 10;
+const BOARD_WIDTH = 14;
 const BOARD_HEIGHT = 20;
 const INITIAL_DROP_TIME = 1000;
 const LEVEL_SPEED_INCREASE = 100;

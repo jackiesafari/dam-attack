@@ -48,6 +48,7 @@ export class EnhancedGame extends Scene {
   private isPaused: boolean = false;
   private currentLevel: number = 1;
   private gameMode: 'campaign' | 'endless' = 'campaign';
+  private hasShownWelcome: boolean = false;
   
   // Visual elements
   private gameContainer!: Phaser.GameObjects.Container;
@@ -112,6 +113,7 @@ export class EnhancedGame extends Scene {
     this.lastUpdateTime = 0;
     this.dropTimer = 0;
     this.activePowerUps.clear();
+    this.hasShownWelcome = false;
   }
 
   preload() {
@@ -569,6 +571,21 @@ export class EnhancedGame extends Scene {
       hasCurrentPiece: !!currentState.currentPiece
     });
     
+    // Check if game needs to be initialized (first time starting)
+    // A game hasn't started if: board exists but is empty (all zeros), no pieces placed, score is 0
+    const boardIsEmpty = currentState.board && currentState.board.length > 0 && 
+      currentState.board.every(row => row.every(cell => cell === 0));
+    const gameNotStarted = boardIsEmpty && 
+      currentState.score === 0 && 
+      currentState.lines === 0 && 
+      !currentState.currentPiece;
+    
+    if (gameNotStarted) {
+      console.log('🎯 First time starting - initializing gameplay');
+      this.startActualGameplay();
+      return;
+    }
+    
     // Only spawn a new piece if we don't have one
     if (!currentState.currentPiece) {
       console.log('🎲 No current piece - spawning new one');
@@ -579,6 +596,18 @@ export class EnhancedGame extends Scene {
     
     // Resume game timing
     this.lastUpdateTime = this.time.now;
+    
+    // Show welcome message if we haven't shown it yet (fallback)
+    if (this.gameMode === 'campaign' && !this.hasShownWelcome && this.messageText && this.messageBubbleGraphics) {
+      this.hasShownWelcome = true;
+      this.time.delayedCall(1000, () => {
+        this.showBeaverMessage("Welcome! Let's build a dam!");
+      });
+      // Start encouragement timer after welcome message
+      this.time.delayedCall(6000, () => {
+        this.startEncouragementTimer();
+      });
+    }
     
     console.log('🎮 Gameplay resumed successfully!');
   }
@@ -614,13 +643,26 @@ export class EnhancedGame extends Scene {
     console.log('⏰ Setting up game timing');
     this.lastUpdateTime = this.time.now;
     
-    // Show welcome message after a short delay
+    // Show welcome message after a short delay (ensure message system is ready)
     this.time.delayedCall(1500, () => {
-      this.showBeaverMessage("Welcome! Let's build a dam together!");
+      if (this.messageText && this.messageBubbleGraphics) {
+        this.showBeaverMessage("Welcome! Let's build a dam!");
+      } else {
+        console.warn('⚠️ Message system not initialized, retrying welcome message...');
+        // Retry after a bit more time if not ready
+        this.time.delayedCall(500, () => {
+          if (this.messageText && this.messageBubbleGraphics) {
+            this.showBeaverMessage("Welcome! Let's build a dam!");
+          }
+        });
+      }
     });
     
-    // Start periodic encouragement messages
-    this.startEncouragementTimer();
+    // Start periodic encouragement messages (after welcome message has time to show)
+    // Welcome message shows at 1.5s, stays for 4s, so start encouragement timer after 6s
+    this.time.delayedCall(6000, () => {
+      this.startEncouragementTimer();
+    });
     
     // Start the water timer (match grace period duration)
     this.futuristicTimer.start(30000); // 30 seconds to match grace period
@@ -1530,7 +1572,7 @@ export class EnhancedGame extends Scene {
             this.mobileControlsUI.setVisible(true);
           }
           
-          // Resume gameplay without resetting the game state
+          // Resume gameplay (will call startActualGameplay if first time)
           this.resumeGameplay();
         }
       });
@@ -2484,15 +2526,16 @@ export class EnhancedGame extends Scene {
   private createBeaverMessageSystem(): void {
     const { width, height } = this.scale;
     const isMobile = width < 600;
+    const isFullscreen = width > 1200;
     
     // Position message bubble above the beaver (adjusted for new beaver position)
     // Ensure bubble doesn't go off screen - position it more to the right and higher
-    const bubbleX = isMobile ? 150 : 200; // Moved even further right to prevent cutoff
-    const bubbleY = height - (isMobile ? 300 : 320); // Higher above the beaver to prevent overlap
+    const bubbleX = isMobile ? 150 : isFullscreen ? 220 : 200; // Slightly larger for fullscreen
+    const bubbleY = height - (isMobile ? 300 : isFullscreen ? 340 : 320); // Adjusted for each view
     
-    // OPTIMIZED: Much more compact bubble for welcome message
-    const bubbleWidth = isMobile ? 160 : 180; // Reduced from 200/250
-    const bubbleHeight = isMobile ? 60 : 70; // Reduced from 100/120
+    // Responsive bubble sizing for different screen sizes
+    const bubbleWidth = isMobile ? 160 : isFullscreen ? 200 : 180; // Larger for fullscreen
+    const bubbleHeight = isMobile ? 60 : isFullscreen ? 80 : 70; // Taller for fullscreen to fit message
     
     // Create a container to hold both bubble and text together
     const messageContainer = this.add.container(bubbleX, bubbleY);
@@ -2517,11 +2560,11 @@ export class EnhancedGame extends Scene {
     
     // Message text positioned relative to the container (centered in bubble)
     this.messageText = this.add.text(0, 0, 'Ready to build!', {
-      fontSize: isMobile ? '14px' : '16px', // Much smaller font to fit better in bubble
+      fontSize: isMobile ? '14px' : isFullscreen ? '18px' : '16px', // Responsive font sizing
       color: '#FFFFFF', // Pure white for maximum visibility
       fontFamily: 'Arial Black',
       align: 'center',
-      wordWrap: { width: bubbleWidth - 30 }, // Optimized padding for compact bubble
+      wordWrap: { width: bubbleWidth - 30 }, // Responsive word wrap for different screen sizes
       stroke: '#000000', // Black stroke for contrast
       strokeThickness: 2, // Thinner stroke for cleaner look
       shadow: {

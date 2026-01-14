@@ -5,6 +5,8 @@ export interface GameInfoData {
   level: number;
   lines: number;
   nextPiece?: string;
+  nextPieceShape?: number[][];
+  nextPieceColor?: number;
 }
 
 export interface MobileGameInfoConfig {
@@ -28,6 +30,9 @@ export class MobileGameInfoUI {
   private linesText: Phaser.GameObjects.Text;
   private nextPieceText: Phaser.GameObjects.Text;
   private background: Phaser.GameObjects.Graphics;
+  private nextPiecePreview: Phaser.GameObjects.Container;
+  private previewBlockSize: number = 8; // Size of each block in preview (smaller than game blocks)
+  private currentPreviewData: { shape?: number[][]; color?: number } = {}; // Store current preview data
 
   constructor(scene: Phaser.Scene, config?: Partial<MobileGameInfoConfig>) {
     this.scene = scene;
@@ -35,7 +40,7 @@ export class MobileGameInfoUI {
     // Default configuration optimized for mobile - reduced width for better board spacing
     this.config = {
       width: 100, // Reduced from 120 to give more space to game board
-      height: 100,
+      height: 120, // Increased from 100 to accommodate next piece preview
       backgroundColor: 0x000000,
       borderColor: 0x00FFFF,
       textColor: '#00FFFF',
@@ -52,6 +57,7 @@ export class MobileGameInfoUI {
   private createUI(): void {
     this.createBackground();
     this.createTexts();
+    this.createNextPiecePreview();
   }
 
   private createBackground(): void {
@@ -129,6 +135,100 @@ export class MobileGameInfoUI {
     this.container.add([this.scoreText, this.levelText, this.linesText, this.nextPieceText]);
   }
 
+  private createNextPiecePreview(): void {
+    // Create container for next piece preview
+    this.nextPiecePreview = this.scene.add.container(0, 0);
+    this.nextPiecePreview.setVisible(false); // Hidden until next piece is available
+    this.container.add(this.nextPiecePreview);
+  }
+
+  private renderNextPiecePreview(shape: number[][], color: number): void {
+    // Clear existing preview blocks
+    this.nextPiecePreview.removeAll(true);
+    
+    if (!shape || shape.length === 0) {
+      this.nextPiecePreview.setVisible(false);
+      return;
+    }
+
+    // Calculate preview dimensions
+    const shapeWidth = shape[0]?.length || 0;
+    const shapeHeight = shape.length;
+    const previewWidth = shapeWidth * this.previewBlockSize;
+    const previewHeight = shapeHeight * this.previewBlockSize;
+    
+    // Center the preview below "NEXT:" text
+    // Container coordinates: (0,0) is center, negative Y is up, positive Y is down
+    const { width, height, compact } = this.config;
+    const halfHeight = height / 2;
+    const previewX = 0; // Center horizontally (container is already positioned)
+    // Position below "NEXT:" text - "NEXT:" is at startY + lineHeight * 3, so preview goes below that
+    const previewY = compact ? 42 : 50; // Position below "NEXT:" text, relative to container center
+    
+    // Create a small background box for the preview
+    const previewBg = this.scene.add.graphics();
+    previewBg.fillStyle(0x000000, 0.5);
+    previewBg.fillRoundedRect(
+      previewX - previewWidth / 2 - 4,
+      previewY - previewHeight / 2 - 4,
+      previewWidth + 8,
+      previewHeight + 8,
+      2
+    );
+    previewBg.lineStyle(1, this.config.borderColor, 0.5);
+    previewBg.strokeRoundedRect(
+      previewX - previewWidth / 2 - 4,
+      previewY - previewHeight / 2 - 4,
+      previewWidth + 8,
+      previewHeight + 8,
+      2
+    );
+    this.nextPiecePreview.add(previewBg);
+    
+    // Render each block of the piece
+    for (let py = 0; py < shape.length; py++) {
+      for (let px = 0; px < shape[py].length; px++) {
+        if (shape[py][px]) {
+          const blockX = previewX - previewWidth / 2 + px * this.previewBlockSize;
+          const blockY = previewY - previewHeight / 2 + py * this.previewBlockSize;
+          
+          // Create mini block with wood texture
+          const block = this.scene.add.graphics();
+          
+          // Main wood color
+          block.fillStyle(color, 1);
+          block.fillRect(blockX, blockY, this.previewBlockSize - 1, this.previewBlockSize - 1);
+          
+          // Wood grain effect
+          const colorObj = Phaser.Display.Color.IntegerToColor(color);
+          const lighterColor = Phaser.Display.Color.GetColor32(
+            Math.min(255, colorObj.red + 30),
+            Math.min(255, colorObj.green + 30),
+            Math.min(255, colorObj.blue + 30),
+            255
+          );
+          block.lineStyle(0.5, lighterColor, 0.7);
+          
+          // Draw wood grain lines
+          for (let i = 0; i < 2; i++) {
+            const lineY = blockY + (i + 1) * (this.previewBlockSize / 3);
+            block.moveTo(blockX, lineY);
+            block.lineTo(blockX + this.previewBlockSize - 1, lineY);
+          }
+          block.strokePath();
+          
+          // Add border
+          block.lineStyle(0.5, 0x000000, 0.5);
+          block.strokeRect(blockX, blockY, this.previewBlockSize - 1, this.previewBlockSize - 1);
+          
+          this.nextPiecePreview.add(block);
+        }
+      }
+    }
+    
+    this.nextPiecePreview.setVisible(true);
+  }
+
   /**
    * Update game information display
    */
@@ -145,8 +245,21 @@ export class MobileGameInfoUI {
       this.linesText.setText(`LINES: ${data.lines}`);
     }
     
-    if (this.nextPieceText && data.nextPiece) {
-      this.nextPieceText.setText(`NEXT: ${data.nextPiece}`);
+    if (this.nextPieceText) {
+      if (data.nextPiece) {
+        this.nextPieceText.setText(`NEXT:`);
+      } else {
+        this.nextPieceText.setText(`NEXT: -`);
+      }
+    }
+    
+    // Update next piece preview
+    if (data.nextPieceShape && data.nextPieceColor !== undefined) {
+      this.currentPreviewData = { shape: data.nextPieceShape, color: data.nextPieceColor };
+      this.renderNextPiecePreview(data.nextPieceShape, data.nextPieceColor);
+    } else {
+      this.currentPreviewData = {};
+      this.nextPiecePreview.setVisible(false);
     }
   }
 
@@ -177,6 +290,20 @@ export class MobileGameInfoUI {
     this.nextPieceText.destroy();
     
     this.createTexts();
+    
+    // Recreate preview if it exists
+    if (this.nextPiecePreview && this.nextPiecePreview.visible) {
+      // Store current piece data before recreating
+      const currentData = this.getCurrentPieceData();
+      this.nextPiecePreview.removeAll(true);
+      if (currentData.shape && currentData.color !== undefined) {
+        this.renderNextPiecePreview(currentData.shape, currentData.color);
+      }
+    }
+  }
+
+  private getCurrentPieceData(): { shape?: number[][]; color?: number } {
+    return this.currentPreviewData;
   }
 
   /**

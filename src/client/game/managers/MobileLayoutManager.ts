@@ -212,9 +212,11 @@ export class MobileLayoutManager {
     const headerY = headerHeight / 2;
     
     // Score panel with desktop sizing - reduced width for better board spacing
-    const scorePanelWidth = 110; // Reduced from 160 to give more space to game board
-    const scorePanelHeight = 120;
-    const scorePanelX = screenWidth - scorePanelWidth / 2 - padding;
+    const scorePanelWidth = 100; // Matches MobileGameInfoUI width for consistency
+    const scorePanelHeight = 140; // Increased from 120 to accommodate next piece preview
+    // Position panel with extra padding to account for glow effects (2px) and ensure full visibility
+    const rightPadding = padding + 10; // Extra padding (20 + 10 = 30px) to ensure panel and glow are fully visible
+    const scorePanelX = screenWidth - scorePanelWidth / 2 - rightPadding;
     const scorePanelY = headerHeight + scorePanelHeight / 2 + padding;
     
     // Next piece area with desktop proportions

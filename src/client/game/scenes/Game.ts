@@ -218,6 +218,12 @@ export class Game extends Scene {
       console.log('✅ First piece spawned successfully:', this.currentPiece.name);
     }
     
+    // Ensure preview is shown immediately after first piece spawns
+    // Use a small delay to ensure layout system is fully ready
+    this.time.delayedCall(50, () => {
+      this.updateScoreDisplay();
+    });
+    
     // Initial welcome message from beaver
     this.time.delayedCall(1000, () => {
       this.showRandomEncouragement("Welcome! Let's build a dam together!");
@@ -383,8 +389,11 @@ export class Game extends Scene {
 
   private createScoreDisplay() {
     const screenWidth = this.scale.width;
-    // Position score display closer to edge to give more space to game board
-    const scoreX = screenWidth - 10; // Reduced from 20 to make panel narrower
+    // Position score display with proper padding from edge to ensure full visibility
+    // Account for panel width (100px) and glow effects (2px) + safety margin
+    const panelWidth = 100; // Matches MobileGameInfoUI width
+    const rightPadding = 30; // Padding to ensure panel and glow are fully visible (20 + 10 for safety)
+    const scoreX = screenWidth - rightPadding; // Position text within visible panel area
     
     // Neon-styled score display - using slightly smaller font for compact display
     this.scoreText = this.add.text(scoreX, 100, 'SCORE: 0', {
@@ -432,7 +441,9 @@ export class Game extends Scene {
         score: this.gameState.score,
         level: this.gameState.level,
         lines: this.gameState.lines,
-        nextPiece: this.nextPiece?.name || 'log'
+        nextPiece: this.nextPiece?.name || 'log',
+        nextPieceShape: this.nextPiece?.shape,
+        nextPieceColor: this.nextPiece?.color
       });
     }
   }
@@ -782,6 +793,8 @@ export class Game extends Scene {
     
     console.log('✅ Piece spawned successfully');
     this.updateNextPieceDisplay();
+    // Update score display to refresh next piece preview in UI
+    this.updateScoreDisplay();
   }
 
   private updateNextPieceDisplay() {

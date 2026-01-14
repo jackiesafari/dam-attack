@@ -156,10 +156,10 @@ export class MobileFirstLayoutSystem {
         };
       default: // desktop
         return {
-          width: 160,
-          height: 120,
-          fontSize: '16px',
-          compact: false
+          width: 100, // Reduced to match scorePanelWidth (110) minus some margin
+          height: 120, // Increased to accommodate next piece preview
+          fontSize: '15px', // Slightly reduced for compact display
+          compact: true // Use compact mode for better space usage
         };
     }
   }

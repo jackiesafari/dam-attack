@@ -100,6 +100,11 @@ export class EnhancedGame extends Scene {
   // Next piece preview positioning
   private nextPieceX: number = 0;
   private nextPieceY: number = 0;
+  
+  // UI state guards to prevent duplicate overlays / mis-clicks
+  private isShowingLevelComplete: boolean = false;
+  private isShowingLevelIntro: boolean = false;
+  private overlayBackground: Phaser.GameObjects.Container | null = null;
 
   constructor() {
     super('EnhancedGame');
@@ -114,12 +119,17 @@ export class EnhancedGame extends Scene {
     this.dropTimer = 0;
     this.activePowerUps.clear();
     this.hasShownWelcome = false;
+    this.isShowingLevelComplete = false;
+    this.isShowingLevelIntro = false;
+    this.overlayBackground = null;
   }
 
   preload() {
     // Load the beaver images
     this.load.image('beaverstory', '/assets/beaverstory.png');
     this.load.image('beaverlogo', '/assets/beaverlogo.png');
+    // Level complete beaver (for wooden sign)
+    this.load.image('levelCompleteBeaver', '/assets/level-complete-beaver.png');
   }
 
   create() {
@@ -171,6 +181,15 @@ export class EnhancedGame extends Scene {
     // Environmental systems (simplified)
     this.seasonalManager = new SeasonalManager(this);
     this.waterLevelManager = new WaterLevelManager(this, 800, 600);
+    
+    // Level progression manager
+    this.levelProgressionManager = new LevelProgressionManager(
+      this,
+      this.seasonalManager,
+      this.waterLevelManager,
+      this.gameStateManager
+    );
+    this.levelProgressionManager.startLevel(this.currentLevel);
     
     // Initialize grace period from seasonal manager
     const gracePeriod = this.seasonalManager.getCurrentGracePeriod();
@@ -914,10 +933,22 @@ export class EnhancedGame extends Scene {
       this.showBeaverMessage(message);
       
       // Show story elements at milestones (check if we've reached or passed the milestone)
-      if (newLines >= 10 && state.lines < 10) {
-        this.showMilestoneStory(10);
+      if (newLines >= 5 && state.lines < 5) {
+        this.showMilestoneStory(5);
       } else if (newLines >= 25 && state.lines < 25) {
         this.showMilestoneStory(25);
+      }
+      
+      // Check if level is completed (target lines reached)
+      const currentSeasonalLevel = this.seasonalManager.getCurrentLevel();
+      if (currentSeasonalLevel && newLines >= currentSeasonalLevel.targetLines) {
+        console.log(`🎯 Level ${this.currentLevel} completed! Cleared ${newLines} lines (target: ${currentSeasonalLevel.targetLines})`);
+        this.events.emit('level-completed', {
+          level: this.currentLevel,
+          lines: newLines,
+          score: updatedState.score,
+          timeElapsed: Date.now() - this.gameStartTime
+        });
       }
       
       console.log('Water reduced by:', waterReduction, 'Current water level:', this.waterLevelManager.getCurrentLevel());
@@ -1101,10 +1132,7 @@ export class EnhancedGame extends Scene {
     // Update water level manager (handles water physics and rendering)
     this.waterLevelManager.update(delta);
     
-    // Update level progression manager (handles level transitions and progress)
-    if (this.levelProgressionManager) {
-      this.levelProgressionManager.update(delta);
-    }
+    // Level progression manager doesn't need update calls - it handles events
   }
 
   /**
@@ -1888,39 +1916,619 @@ export class EnhancedGame extends Scene {
   }
 
   private handleLevelCompletion(data: any): void {
+    if (this.isShowingLevelComplete || this.isShowingLevelIntro) {
+      return; // Guard against duplicate triggers
+    }
+    this.isShowingLevelComplete = true;
     this.isPaused = true;
+    const { width, height } = this.scale;
+    const isMobile = width < 600;
     
-    // Show completion screen
-    const completionPanel = this.add.graphics();
-    completionPanel.fillStyle(0x000000, 0.9);
-    completionPanel.fillRect(150, 200, 500, 200);
-    completionPanel.setDepth(300);
+    // Create environmental background
+    this.createLevelCompleteBackground();
     
-    const completionText = this.add.text(400, 250, 'Level Complete!', {
-      fontSize: '32px',
-      color: '#FFD700',
-      fontFamily: 'Arial Black'
-    }).setOrigin(0.5).setDepth(301);
+    // Create container for the entire completion screen
+    const completionContainer = this.add.container(width / 2, height / 2);
+    completionContainer.setDepth(300);
     
-    const statsText = this.add.text(400, 300, 
-      `Stars: ${'⭐'.repeat(data.stars)}\nScore: ${data.score.toLocaleString()}\nTime: ${Math.round(data.timeElapsed/1000)}s`, {
-      fontSize: '18px',
-      color: '#FFFFFF',
-      fontFamily: 'Arial',
+    // Input blocker to consume clicks while overlay is open
+    const blocker = this.add.rectangle(0, 0, width, height, 0x000000, 0);
+    blocker.setInteractive();
+    blocker.setDepth(0);
+    completionContainer.add(blocker);
+    
+    // Wood sign dimensions (suspended wooden sign) - smaller to show more background
+    const signWidth = isMobile ? width - 120 : 500;
+    const signHeight = isMobile ? 350 : 400;
+    const halfWidth = signWidth / 2;
+    const halfHeight = signHeight / 2;
+    
+    // Create suspended wooden sign with ropes
+    const signContainer = this.add.container(0, 0);
+    signContainer.setDepth(1);
+    
+    // Ropes from top
+    const ropeGraphics = this.add.graphics();
+    ropeGraphics.lineStyle(4, 0x8B4513, 0.8);
+    ropeGraphics.moveTo(-halfWidth + 30, -halfHeight - 20);
+    ropeGraphics.lineTo(-halfWidth + 30, -halfHeight);
+    ropeGraphics.moveTo(halfWidth - 30, -halfHeight - 20);
+    ropeGraphics.lineTo(halfWidth - 30, -halfHeight);
+    ropeGraphics.strokePath();
+    signContainer.add(ropeGraphics);
+    
+    // Main wooden sign background with enhanced texture
+    const woodSign = this.add.graphics();
+    
+    // Wood colors
+    const woodBaseColor = 0x4A3728;
+    const woodLightColor = 0x6B4E37;
+    const woodDarkColor = 0x2E2419;
+    const woodGrainColor = 0x3D2F1F;
+    const woodAccentColor = 0x8B4513;
+    const cyanAccent = 0x66D9EF;
+    
+    // Outer shadow for suspended effect
+    woodSign.fillStyle(0x000000, 0.4);
+    woodSign.fillRoundedRect(-halfWidth + 8, -halfHeight + 8, signWidth, signHeight, 15);
+    
+    // Main wood sign
+    woodSign.fillStyle(woodBaseColor, 0.95);
+    woodSign.fillRoundedRect(-halfWidth, -halfHeight, signWidth, signHeight, 15);
+    
+    // Enhanced wood grain texture (multiple layers for detailed wood)
+    woodSign.lineStyle(1, woodGrainColor, 0.5);
+    const grainLines = 16;
+    for (let i = 1; i < grainLines; i++) {
+      const y = -halfHeight + (signHeight / grainLines) * i;
+      // Wavy grain lines for more realistic wood
+      const waveOffset = Math.sin(i * 0.8) * 3;
+      woodSign.moveTo(-halfWidth + 15 + waveOffset, y);
+      woodSign.lineTo(halfWidth - 15 + waveOffset, y);
+    }
+    woodSign.strokePath();
+    
+    // Vertical grain lines for more realistic wood
+    woodSign.lineStyle(0.5, woodGrainColor, 0.3);
+    for (let i = 1; i < 10; i++) {
+      const x = -halfWidth + (signWidth / 10) * i;
+      const waveOffset = Math.sin(i * 0.5) * 2;
+      woodSign.moveTo(x + waveOffset, -halfHeight + 15);
+      woodSign.lineTo(x + waveOffset, halfHeight - 15);
+    }
+    woodSign.strokePath();
+    
+    // Knots and imperfections for realistic wood
+    woodSign.fillStyle(woodDarkColor, 0.4);
+    woodSign.fillCircle(-halfWidth + 40, -halfHeight + 60, 8);
+    woodSign.fillCircle(halfWidth - 30, halfHeight - 80, 6);
+    woodSign.fillCircle(-halfWidth + 60, halfHeight - 40, 5);
+    
+    // Wood rings around knots
+    woodSign.lineStyle(1, woodGrainColor, 0.6);
+    woodSign.strokeCircle(-halfWidth + 40, -halfHeight + 60, 8);
+    woodSign.strokeCircle(halfWidth - 30, halfHeight - 80, 6);
+    woodSign.strokeCircle(-halfWidth + 60, halfHeight - 40, 5);
+    
+    // Additional wood texture details
+    woodSign.lineStyle(0.3, woodLightColor, 0.2);
+    for (let i = 0; i < 20; i++) {
+      const x = -halfWidth + Math.random() * signWidth;
+      const y = -halfHeight + Math.random() * signHeight;
+      const length = 5 + Math.random() * 10;
+      woodSign.moveTo(x, y);
+      woodSign.lineTo(x + length, y);
+    }
+    woodSign.strokePath();
+    
+    // 3D depth effect - enhanced highlights
+    woodSign.fillStyle(woodLightColor, 0.7);
+    woodSign.fillRect(-halfWidth, -halfHeight, signWidth, 8);
+    woodSign.fillRect(-halfWidth, -halfHeight, 8, signHeight);
+    
+    // 3D depth effect - enhanced shadows
+    woodSign.fillStyle(woodDarkColor, 0.8);
+    woodSign.fillRect(halfWidth - 8, -halfHeight + 4, 8, signHeight - 4);
+    woodSign.fillRect(-halfWidth + 4, halfHeight - 8, signWidth - 4, 8);
+    
+    // Carved border details
+    woodSign.lineStyle(2, woodAccentColor, 0.9);
+    woodSign.strokeRoundedRect(-halfWidth, -halfHeight, signWidth, signHeight, 15);
+    
+    // Inner carved border
+    woodSign.lineStyle(1, woodDarkColor, 0.9);
+    woodSign.strokeRoundedRect(-halfWidth + 12, -halfHeight + 12, signWidth - 24, signHeight - 24, 10);
+    
+    // Inner highlight for carved effect
+    woodSign.lineStyle(1, woodLightColor, 0.6);
+    woodSign.strokeRoundedRect(-halfWidth + 15, -halfHeight + 15, signWidth - 30, signHeight - 30, 8);
+    
+    signContainer.add(woodSign);
+    
+    // Add decorative vines and cherry blossoms
+    this.addDecorativeElements(signContainer, halfWidth, halfHeight);
+    
+    completionContainer.add(signContainer);
+    
+    // Engraved title text (carved/inset effect) - positioned on the smaller sign
+    const titleShadow = this.add.text(0, -halfHeight + 50, 'LEVEL COMPLETE', {
+      fontSize: isMobile ? '24px' : '32px',
+      color: '#2E2419',
+      fontFamily: 'Arial Black',
       align: 'center'
-    }).setOrigin(0.5).setDepth(301);
+    }).setOrigin(0.5);
+    titleShadow.setPosition(titleShadow.x + 2, titleShadow.y + 2);
+    completionContainer.add(titleShadow);
     
-    // Continue button
-    const continueButton = this.add.text(400, 360, 'Continue', {
-      fontSize: '20px',
-      color: '#00FF00',
-      fontFamily: 'Arial Black'
-    }).setOrigin(0.5).setDepth(301);
+    const titleText = this.add.text(0, -halfHeight + 50, 'LEVEL COMPLETE', {
+      fontSize: isMobile ? '24px' : '32px',
+      color: '#DAA520', // Golden engraved text
+      fontFamily: 'Arial Black',
+      align: 'center',
+      stroke: '#654321',
+      strokeThickness: 2
+    }).setOrigin(0.5);
+    completionContainer.add(titleText);
     
-    continueButton.setInteractive();
-    continueButton.on('pointerdown', () => {
-      // Go to next level or level select
-      this.scene.start('LevelSelect');
+    // Stars display (properly spaced, no overlap) - positioned on the smaller sign
+    const starY = -halfHeight + 90;
+    const starSize = isMobile ? '28px' : '36px';
+    const starSpacing = isMobile ? 45 : 60;
+    const starsEarned = data.stars || 1;
+    
+    for (let i = 0; i < 3; i++) {
+      const starX = -starSpacing + (i * starSpacing);
+      const starChar = i < starsEarned ? '★' : '☆';
+      const starColor = i < starsEarned ? '#FFD700' : '#654321';
+      
+      // Star shadow
+      const starShadow = this.add.text(starX + 1, starY + 1, starChar, {
+        fontSize: starSize,
+        color: '#000000',
+        fontFamily: 'Arial',
+        align: 'center'
+      }).setOrigin(0.5);
+      completionContainer.add(starShadow);
+      
+      // Star
+      const star = this.add.text(starX, starY, starChar, {
+        fontSize: starSize,
+        color: starColor,
+        fontFamily: 'Arial',
+        align: 'center'
+      }).setOrigin(0.5);
+      completionContainer.add(star);
+    }
+    
+    // Stats section with engraved style - positioned on the smaller sign
+    const statsY = -halfHeight + 140;
+    const statSpacing = isMobile ? 25 : 30;
+    
+    // Score
+    const scoreShadow = this.add.text(0, statsY, `SCORE: ${data.score.toLocaleString()}`, {
+      fontSize: isMobile ? '14px' : '18px',
+      color: '#2E2419',
+      fontFamily: 'Arial Black',
+      align: 'center'
+    }).setOrigin(0.5);
+    scoreShadow.setPosition(scoreShadow.x + 1, scoreShadow.y + 1);
+    completionContainer.add(scoreShadow);
+    
+    const scoreText = this.add.text(0, statsY, `SCORE: ${data.score.toLocaleString()}`, {
+      fontSize: isMobile ? '14px' : '18px',
+      color: '#F5DEB3', // Light wood text
+      fontFamily: 'Arial Black',
+      align: 'center'
+    }).setOrigin(0.5);
+    completionContainer.add(scoreText);
+    
+    // Time
+    const timeSeconds = Math.round(data.timeElapsed / 1000);
+    const timeShadow = this.add.text(0, statsY + statSpacing, `TIME: ${timeSeconds}s`, {
+      fontSize: isMobile ? '14px' : '18px',
+      color: '#2E2419',
+      fontFamily: 'Arial Black',
+      align: 'center'
+    }).setOrigin(0.5);
+    timeShadow.setPosition(timeShadow.x + 1, timeShadow.y + 1);
+    completionContainer.add(timeShadow);
+    
+    const timeText = this.add.text(0, statsY + statSpacing, `TIME: ${timeSeconds}s`, {
+      fontSize: isMobile ? '14px' : '18px',
+      color: '#F5DEB3',
+      fontFamily: 'Arial Black',
+      align: 'center'
+    }).setOrigin(0.5);
+    completionContainer.add(timeText);
+    
+    // Wooden Continue button - positioned on the smaller sign
+    const buttonY = isMobile ? 0 : 10; // we'll center content vertically; button sits near center-bottom
+    const buttonWidth = isMobile ? 160 : 180;
+    const buttonHeight = isMobile ? 40 : 45;
+    const buttonContainer = this.add.container(0, buttonY);
+    buttonContainer.setDepth(2);
+    
+    const buttonBg = this.add.graphics();
+    const buttonRadius = 12;
+    
+    // Button shadow
+    buttonBg.fillStyle(0x000000, 0.3);
+    buttonBg.fillRoundedRect(-buttonWidth/2 + 3, -buttonHeight/2 + 3, buttonWidth, buttonHeight, buttonRadius);
+    
+    // Button base (lighter wood)
+    buttonBg.fillStyle(0xDEB887, 0.95);
+    buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, buttonRadius);
+    
+    // Button wood grain
+    buttonBg.lineStyle(1, 0xBC9A6A, 0.3);
+    for (let i = 1; i < 3; i++) {
+      const lineY = -buttonHeight/2 + (buttonHeight / 3) * i;
+      buttonBg.moveTo(-buttonWidth/2 + 5, lineY);
+      buttonBg.lineTo(buttonWidth/2 - 5, lineY);
+    }
+    buttonBg.strokePath();
+    
+    // Button highlight
+    buttonBg.fillStyle(0xF5DEB3, 0.8);
+    buttonBg.fillRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, 4);
+    buttonBg.fillRect(-buttonWidth/2, -buttonHeight/2, 4, buttonHeight);
+    
+    // Button shadow
+    buttonBg.fillStyle(0xBC9A6A, 0.7);
+    buttonBg.fillRect(buttonWidth/2 - 4, -buttonHeight/2 + 2, 4, buttonHeight - 2);
+    buttonBg.fillRect(-buttonWidth/2 + 2, buttonHeight/2 - 4, buttonWidth - 2, 4);
+    
+    // Cyan border
+    buttonBg.lineStyle(3, cyanAccent, 0.9);
+    buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, buttonRadius);
+    
+    buttonContainer.add(buttonBg);
+    
+    // Button text with shadow
+    const buttonTextShadow = this.add.text(0, 0, 'CONTINUE', {
+      fontSize: isMobile ? '18px' : '22px',
+      color: '#000000',
+      fontFamily: 'Arial Black',
+      align: 'center'
+    }).setOrigin(0.5);
+    buttonTextShadow.setPosition(buttonTextShadow.x + 1, buttonTextShadow.y + 1);
+    buttonContainer.add(buttonTextShadow);
+    
+    const buttonText = this.add.text(0, 0, 'CONTINUE', {
+      fontSize: isMobile ? '18px' : '22px',
+      color: '#2E2419',
+      fontFamily: 'Arial Black',
+      align: 'center'
+    }).setOrigin(0.5);
+    buttonContainer.add(buttonText);
+    completionContainer.add(buttonContainer);
+    
+    // Position content vertically centered: compute offsets
+    const contentTopPadding = isMobile ? 20 : 24;
+    const titleY = -halfHeight + contentTopPadding + (isMobile ? 20 : 24);
+    titleShadow.setY(titleY);
+    titleText.setY(titleY);
+    const starsY = titleY + (isMobile ? 32 : 40);
+    // Update existing stars group Y
+    // (stars are created at starY variable, so we adjust it here)
+    // No-op: starY already uses computed from halfHeight but we'll leave as is for readability
+    const statsBaseY = starsY + (isMobile ? 34 : 44);
+    scoreShadow.setY(statsBaseY);
+    scoreText.setY(statsBaseY);
+    timeShadow.setY(statsBaseY + (isMobile ? 24 : 28));
+    timeText.setY(statsBaseY + (isMobile ? 24 : 28));
+    buttonContainer.setY(timeText.y + (isMobile ? 38 : 44));
+
+    // Add entrance animation for polish
+    completionContainer.setAlpha(0);
+    completionContainer.setScale(0.8);
+    this.tweens.add({
+      targets: completionContainer,
+      alpha: 1,
+      scale: 1,
+      duration: 500,
+      ease: 'Back.easeOut'
+    });
+    
+    // Add subtle swaying animation to the suspended sign
+    this.tweens.add({
+      targets: signContainer,
+      rotation: 0.02,
+      duration: 2000,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+    
+    // Button interactivity
+    buttonContainer.setSize(buttonWidth, buttonHeight);
+    buttonContainer.setInteractive(new Phaser.Geom.Rectangle(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight), Phaser.Geom.Rectangle.Contains);
+    
+    // Helper function to redraw button
+    const redrawButton = (hovered: boolean) => {
+      buttonBg.clear();
+      const baseColor = hovered ? 0xE6C799 : 0xDEB887;
+      const borderColor = hovered ? 0x7FE7FF : cyanAccent;
+      
+      // Button shadow
+      buttonBg.fillStyle(0x000000, 0.3);
+      buttonBg.fillRoundedRect(-buttonWidth/2 + 3, -buttonHeight/2 + 3, buttonWidth, buttonHeight, buttonRadius);
+      
+      // Button base
+      buttonBg.fillStyle(baseColor, 0.95);
+      buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, buttonRadius);
+      
+      // Wood grain, highlights, shadows, border
+      buttonBg.lineStyle(1, 0xBC9A6A, 0.3);
+      for (let i = 1; i < 3; i++) {
+        const lineY = -buttonHeight/2 + (buttonHeight / 3) * i;
+        buttonBg.moveTo(-buttonWidth/2 + 5, lineY);
+        buttonBg.lineTo(buttonWidth/2 - 5, lineY);
+      }
+      buttonBg.strokePath();
+      buttonBg.fillStyle(0xF5DEB3, 0.8);
+      buttonBg.fillRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, 4);
+      buttonBg.fillRect(-buttonWidth/2, -buttonHeight/2, 4, buttonHeight);
+      buttonBg.fillStyle(0xBC9A6A, 0.7);
+      buttonBg.fillRect(buttonWidth/2 - 4, -buttonHeight/2 + 2, 4, buttonHeight - 2);
+      buttonBg.fillRect(-buttonWidth/2 + 2, buttonHeight/2 - 4, buttonWidth - 2, 4);
+      buttonBg.lineStyle(3, borderColor, hovered ? 1.0 : 0.9);
+      buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, buttonRadius);
+    };
+    
+    // Remove scale-based hover to avoid hit-area mismatch
+    buttonContainer.on('pointerover', () => {
+      redrawButton(true);
+    });
+    
+    buttonContainer.on('pointerout', () => {
+      redrawButton(false);
+    });
+    
+    buttonContainer.once('pointerdown', () => {
+      // Single-click activation; proceed to next level intro
+      buttonContainer.disableInteractive();
+      const nextLevel = this.currentLevel + 1;
+      completionContainer.destroy();
+      // Remove background overlay if any before intro
+      if (this.overlayBackground) { this.overlayBackground.destroy(true); this.overlayBackground = null; }
+      this.isShowingLevelComplete = false;
+      this.showLevelIntro(nextLevel);
+    });
+
+    // Add beaver image below the button (prominent and centered)
+    const beaverMaxWidth = isMobile ? 200 : 260; // keep current visual size
+    const beaverMargin = isMobile ? 24 : 28; // top edge gap below button
+    // Create beaver now (centered x), we'll position after we know its scaled height
+    const beaver = this.addBeaverCharacter(completionContainer, 0, 0, beaverMaxWidth);
+    const beaverHeight = beaver.displayHeight; // scaled height
+    const beaverBottomY = buttonContainer.y + (buttonHeight / 2) + beaverMargin + beaverHeight;
+    // Clamp to stay inside sign bounds (bottom padding 8px)
+    beaver.y = Math.min(halfHeight - 8, beaverBottomY);
+    beaver.setDepth(1);
+    // Subtle idle animation AFTER final position is set
+    const bob = (isMobile ? 1 : 1.5);
+    this.tweens.add({
+      targets: beaver,
+      y: beaver.y - bob,
+      duration: 2000,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+  }
+
+  private createLevelCompleteBackground(): void {
+    const { width, height } = this.scale;
+    
+    // Destroy any existing background first
+    if (this.overlayBackground) {
+      this.overlayBackground.destroy(true);
+      this.overlayBackground = null;
+    }
+    
+    // Create cherry blossom forest background
+    const backgroundContainer = this.add.container(0, 0);
+    backgroundContainer.setDepth(250);
+    this.overlayBackground = backgroundContainer;
+    
+    // Sky gradient
+    const skyGraphics = this.add.graphics();
+    skyGraphics.fillGradientStyle(0x87CEEB, 0x87CEEB, 0xE0F6FF, 0xE0F6FF, 1);
+    skyGraphics.fillRect(0, 0, width, height);
+    backgroundContainer.add(skyGraphics);
+    
+    // Cherry blossom trees (simplified)
+    const treeGraphics = this.add.graphics();
+    for (let i = 0; i < 8; i++) {
+      const x = (width / 8) * i + Math.random() * 50;
+      const treeHeight = 200 + Math.random() * 100;
+      const treeY = height - treeHeight;
+      
+      // Tree trunk
+      treeGraphics.fillStyle(0x8B4513, 0.8);
+      treeGraphics.fillRect(x - 8, treeY + treeHeight * 0.6, 16, treeHeight * 0.4);
+      
+      // Cherry blossom canopy
+      treeGraphics.fillStyle(0xFFB6C1, 0.7);
+      treeGraphics.fillCircle(x, treeY + treeHeight * 0.3, treeHeight * 0.3);
+      treeGraphics.fillCircle(x - 20, treeY + treeHeight * 0.4, treeHeight * 0.2);
+      treeGraphics.fillCircle(x + 20, treeY + treeHeight * 0.4, treeHeight * 0.2);
+    }
+    backgroundContainer.add(treeGraphics);
+    
+    // Falling cherry blossom petals
+    for (let i = 0; i < 20; i++) {
+      const petal = this.add.graphics();
+      petal.fillStyle(0xFFB6C1, 0.8);
+      petal.fillCircle(0, 0, 3);
+      
+      const startX = Math.random() * width;
+      const startY = -10;
+      const endY = height + 10;
+      
+      petal.setPosition(startX, startY);
+      
+      this.tweens.add({
+        targets: petal,
+        y: endY,
+        x: startX + (Math.random() - 0.5) * 100,
+        duration: 3000 + Math.random() * 2000,
+        ease: 'Linear',
+        repeat: -1,
+        delay: Math.random() * 2000
+      });
+      
+      backgroundContainer.add(petal);
+    }
+    
+    // Sunlight rays
+    const raysGraphics = this.add.graphics();
+    raysGraphics.fillStyle(0xFFFF99, 0.3);
+    for (let i = 0; i < 5; i++) {
+      const rayX = width * 0.8 + i * 20;
+      raysGraphics.fillRect(rayX, 0, 3, height);
+    }
+    backgroundContainer.add(raysGraphics);
+  }
+
+  private addDecorativeElements(signContainer: Phaser.GameObjects.Container, halfWidth: number, halfHeight: number): void {
+    const decorations = this.add.graphics();
+    
+    // Vines wrapping around the sign
+    decorations.lineStyle(3, 0x228B22, 0.8);
+    
+    // Left side vine
+    decorations.moveTo(-halfWidth + 5, -halfHeight + 50);
+    decorations.lineTo(-halfWidth + 5, -halfHeight + 100);
+    decorations.lineTo(-halfWidth + 15, -halfHeight + 120);
+    decorations.lineTo(-halfWidth + 5, -halfHeight + 140);
+    decorations.lineTo(-halfWidth + 5, halfHeight - 50);
+    decorations.strokePath();
+    
+    // Right side vine
+    decorations.moveTo(halfWidth - 5, -halfHeight + 50);
+    decorations.lineTo(halfWidth - 5, -halfHeight + 100);
+    decorations.lineTo(halfWidth - 15, -halfHeight + 120);
+    decorations.lineTo(halfWidth - 5, -halfHeight + 140);
+    decorations.lineTo(halfWidth - 5, halfHeight - 50);
+    decorations.strokePath();
+    
+    // Cherry blossoms on vines
+    decorations.fillStyle(0xFFB6C1, 0.9);
+    decorations.fillCircle(-halfWidth + 5, -halfHeight + 80, 4);
+    decorations.fillCircle(-halfWidth + 15, -halfHeight + 120, 4);
+    decorations.fillCircle(halfWidth - 5, -halfHeight + 80, 4);
+    decorations.fillCircle(halfWidth - 15, -halfHeight + 120, 4);
+    
+    // Carved details (beaver teeth marks)
+    decorations.fillStyle(0x2E2419, 0.6);
+    for (let i = 0; i < 6; i++) {
+      const x = -halfWidth + 20 + i * 30;
+      decorations.fillRect(x, halfHeight - 15, 8, 3);
+      decorations.fillRect(x + 2, halfHeight - 12, 4, 2);
+    }
+    
+    signContainer.add(decorations);
+  }
+
+  private addBeaverCharacter(
+    targetContainer: Phaser.GameObjects.Container,
+    x: number,
+    y: number,
+    maxWidth: number
+  ): Phaser.GameObjects.Image {
+    const beaver = this.add.image(x, y, 'levelCompleteBeaver').setOrigin(0.5, 1);
+    const scale = Math.min(1, maxWidth / beaver.width);
+    beaver.setScale(scale);
+    targetContainer.add(beaver);
+    return beaver;
+  }
+
+  private showLevelIntro(levelNumber: number): void {
+    const { width, height } = this.scale;
+    const isMobile = width < 600;
+    this.isPaused = true;
+    this.isShowingLevelIntro = true;
+    const container = this.add.container(width / 2, height / 2);
+    container.setDepth(350);
+    
+    // Soft background overlay
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.6);
+    bg.fillRect(-width / 2, -height / 2, width, height);
+    container.add(bg);
+    
+    // Consume background clicks to avoid closing everything with no action
+    const clickBlocker = this.add.rectangle(0, 0, width, height, 0x000000, 0);
+    clickBlocker.setInteractive();
+    container.add(clickBlocker);
+    
+    // Reuse wooden sign look in a lighter, smaller intro variant
+    const signW = isMobile ? width - 80 : 560;
+    const signH = isMobile ? 320 : 360;
+    const sign = this.add.graphics();
+    sign.fillStyle(0x4A3728, 0.95);
+    sign.fillRoundedRect(-signW/2, -signH/2, signW, signH, 14);
+    sign.lineStyle(2, 0x8B4513, 1);
+    sign.strokeRoundedRect(-signW/2, -signH/2, signW, signH, 14);
+    container.add(sign);
+    
+    const title = this.add.text(0, -signH/2 + (isMobile ? 36 : 42), `LEVEL ${levelNumber}`, {
+      fontSize: isMobile ? '28px' : '36px',
+      fontFamily: 'Arial Black',
+      color: '#DAA520',
+      stroke: '#000000',
+      strokeThickness: 2,
+      align: 'center'
+    }).setOrigin(0.5);
+    container.add(title);
+    
+    const story = this.add.text(0, -20, 'Fresh currents ahead! The water rises faster—\nstack smart and keep the dam strong.', {
+      fontSize: isMobile ? '14px' : '16px',
+      fontFamily: 'Arial',
+      color: '#F5DEB3',
+      align: 'center'
+    }).setOrigin(0.5);
+    container.add(story);
+    
+    // Start button
+    const btnW = isMobile ? 160 : 200;
+    const btnH = isMobile ? 40 : 46;
+    const startBtn = this.add.container(0, signH/2 - (isMobile ? 48 : 56));
+    const g = this.add.graphics();
+    g.fillStyle(0xDEB887, 0.95);
+    g.fillRoundedRect(-btnW/2, -btnH/2, btnW, btnH, 10);
+    g.lineStyle(3, 0x66D9EF, 1);
+    g.strokeRoundedRect(-btnW/2, -btnH/2, btnW, btnH, 10);
+    const label = this.add.text(0, 0, 'START', {
+      fontSize: isMobile ? '18px' : '22px',
+      fontFamily: 'Arial Black',
+      color: '#2E2419'
+    }).setOrigin(0.5);
+    startBtn.add([g, label]);
+    startBtn.setSize(btnW, btnH);
+    startBtn.setInteractive(new Phaser.Geom.Rectangle(-btnW/2, -btnH/2, btnW, btnH), Phaser.Geom.Rectangle.Contains);
+    container.add(startBtn);
+    
+    startBtn.once('pointerdown', () => {
+      startBtn.disableInteractive();
+      // Remove leftover background overlay (safety)
+      if (this.overlayBackground) { this.overlayBackground.destroy(true); this.overlayBackground = null; }
+      const started = this.levelProgressionManager?.startLevel(levelNumber);
+      if (started) {
+        this.currentLevel = levelNumber;
+        container.destroy();
+        this.isPaused = false;
+        this.isShowingLevelIntro = false;
+        this.resumeGameplay();
+      } else {
+        // Fallback to explicit scene start
+        container.destroy();
+        this.isPaused = false;
+        this.isShowingLevelIntro = false;
+        this.scene.start('EnhancedGame', { level: levelNumber, mode: 'campaign' });
+      }
     });
   }
 
@@ -1965,9 +2573,12 @@ export class EnhancedGame extends Scene {
     let storyText = "";
     let title = "";
     
-    if (lines === 10) {
+    if (lines === 5) {
+      title = "Building Momentum!";
+      storyText = "Great start! You're getting the hang of this. The dam foundation is taking shape nicely. Keep stacking those wooden pieces - you're doing amazing!";
+    } else if (lines === 10) {
       title = "Dam Foundation Complete!";
-      storyText = "Excellent progress! The dam foundation is taking shape. The beaver community is impressed with your building skills. Keep stacking those wooden pieces!";
+      storyText = "Excellent progress! The dam foundation is solid. The beaver community is impressed with your building skills. Keep up the great work!";
     } else if (lines === 25) {
       title = "Legendary Builder!";
       storyText = "Amazing work! Your dam is becoming legendary. The forest animals gather to watch your masterful construction. The water levels are rising - can you keep up?";
@@ -2592,4 +3203,6 @@ export class EnhancedGame extends Scene {
     this.messageBubbleGraphics = messageContainer; // Store the container instead of just graphics
     
     this.uiContainer.add(messageContainer);
-  }}
+  }
+
+}

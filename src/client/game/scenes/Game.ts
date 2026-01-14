@@ -86,10 +86,10 @@ export class Game extends Scene {
   
   // Game board
   private board: number[][] = [];
-  private readonly boardWidth = 14;
+  private readonly boardWidth = 10; // Standard Tetris width
   private readonly boardHeight = 20;
   private readonly cellSize = 25;
-  private readonly boardX = 300;
+  private readonly boardX = 320; // Adjusted to center with narrower scoreboard
   private readonly boardY = 100;
   
   // Current piece
@@ -256,23 +256,33 @@ export class Game extends Scene {
     // Set camera background color
     this.cameras.main.setBackgroundColor(0x0A0A0F);
     
-    // Retro 80s grid background
-    const graphics = this.add.graphics();
-    graphics.lineStyle(1, 0x00FFFF, 0.3);
+    // Retro 80s grid background - only within game board area
+    const gridGraphics = this.add.graphics();
+    gridGraphics.setDepth(0); // Behind game pieces (which are depth 1)
+    gridGraphics.lineStyle(1, 0x00FFFF, 0.3);
     
-    // Draw grid
-    for (let x = 0; x <= this.scale.width; x += 40) {
-      graphics.moveTo(x, 0);
-      graphics.lineTo(x, this.scale.height);
-    }
-    for (let y = 0; y <= this.scale.height; y += 40) {
-      graphics.moveTo(0, y);
-      graphics.lineTo(this.scale.width, y);
-    }
-    graphics.strokePath();
+    // Calculate board boundaries
+    const boardRight = this.boardX + this.boardWidth * this.cellSize;
+    const boardBottom = this.boardY + this.boardHeight * this.cellSize;
     
-    // Add some neon glow effects
+    // Draw vertical grid lines aligned with cell boundaries
+    for (let x = 0; x <= this.boardWidth; x++) {
+      const pixelX = this.boardX + x * this.cellSize;
+      gridGraphics.moveTo(pixelX, this.boardY);
+      gridGraphics.lineTo(pixelX, boardBottom);
+    }
+    
+    // Draw horizontal grid lines aligned with cell boundaries
+    for (let y = 0; y <= this.boardHeight; y++) {
+      const pixelY = this.boardY + y * this.cellSize;
+      gridGraphics.moveTo(this.boardX, pixelY);
+      gridGraphics.lineTo(boardRight, pixelY);
+    }
+    gridGraphics.strokePath();
+    
+    // Add some neon glow effects around the board
     const glowGraphics = this.add.graphics();
+    glowGraphics.setDepth(0); // Behind game pieces
     glowGraphics.lineStyle(3, 0xFF00FF, 0.1);
     glowGraphics.strokeRect(this.boardX - 5, this.boardY - 5, 
                            this.boardWidth * this.cellSize + 10, 
@@ -373,35 +383,37 @@ export class Game extends Scene {
 
   private createScoreDisplay() {
     const screenWidth = this.scale.width;
+    // Position score display closer to edge to give more space to game board
+    const scoreX = screenWidth - 10; // Reduced from 20 to make panel narrower
     
-    // Neon-styled score display
-    this.scoreText = this.add.text(screenWidth - 20, 100, 'SCORE: 0', {
+    // Neon-styled score display - using slightly smaller font for compact display
+    this.scoreText = this.add.text(scoreX, 100, 'SCORE: 0', {
       fontFamily: 'Arial Bold',
-      fontSize: '16px',
+      fontSize: '15px', // Slightly reduced from 16px
       color: '#00FFFF',
       stroke: '#FF00FF',
       strokeThickness: 2
     }).setOrigin(1, 0);
     
-    this.levelText = this.add.text(screenWidth - 20, 125, 'LEVEL: 1', {
+    this.levelText = this.add.text(scoreX, 125, 'LEVEL: 1', {
       fontFamily: 'Arial Bold',
-      fontSize: '16px',
+      fontSize: '15px', // Slightly reduced from 16px
       color: '#00FFFF',
       stroke: '#FF00FF',
       strokeThickness: 2
     }).setOrigin(1, 0);
     
-    this.linesText = this.add.text(screenWidth - 20, 150, 'LINES: 0', {
+    this.linesText = this.add.text(scoreX, 150, 'LINES: 0', {
       fontFamily: 'Arial Bold',
-      fontSize: '16px',
+      fontSize: '15px', // Slightly reduced from 16px
       color: '#00FFFF',
       stroke: '#FF00FF',
       strokeThickness: 2
     }).setOrigin(1, 0);
     
-    this.nextPieceText = this.add.text(screenWidth - 20, 175, 'NEXT: log', {
+    this.nextPieceText = this.add.text(scoreX, 175, 'NEXT: log', {
       fontFamily: 'Arial Bold',
-      fontSize: '14px',
+      fontSize: '13px', // Slightly reduced from 14px
       color: '#FFFF00',
       stroke: '#FF00FF',
       strokeThickness: 1

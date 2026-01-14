@@ -211,8 +211,8 @@ export class MobileLayoutManager {
     const headerX = screenWidth / 2;
     const headerY = headerHeight / 2;
     
-    // Score panel with desktop sizing
-    const scorePanelWidth = 160;
+    // Score panel with desktop sizing - reduced width for better board spacing
+    const scorePanelWidth = 110; // Reduced from 160 to give more space to game board
     const scorePanelHeight = 120;
     const scorePanelX = screenWidth - scorePanelWidth / 2 - padding;
     const scorePanelY = headerHeight + scorePanelHeight / 2 + padding;
@@ -223,8 +223,8 @@ export class MobileLayoutManager {
     const nextPieceX = leftControlsX;
     const nextPieceY = controlsY - 140;
     
-    // Game info with desktop spacing
-    const gameInfoWidth = scorePanelWidth;
+    // Game info with desktop spacing - matches reduced scorePanelWidth
+    const gameInfoWidth = scorePanelWidth; // Now 110 to match scorePanelWidth
     const gameInfoHeight = 100;
     const gameInfoX = scorePanelX;
     const gameInfoY = scorePanelY + scorePanelHeight / 2 + gameInfoHeight / 2 + padding;

@@ -32,9 +32,9 @@ export class MobileGameInfoUI {
   constructor(scene: Phaser.Scene, config?: Partial<MobileGameInfoConfig>) {
     this.scene = scene;
     
-    // Default configuration optimized for mobile
+    // Default configuration optimized for mobile - reduced width for better board spacing
     this.config = {
-      width: 120,
+      width: 100, // Reduced from 120 to give more space to game board
       height: 100,
       backgroundColor: 0x000000,
       borderColor: 0x00FFFF,

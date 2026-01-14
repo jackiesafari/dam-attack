@@ -45,7 +45,7 @@ export class SeasonalManager {
       name: "First Thaw",
       description: "The ice begins to melt, and you must start building your first dam",
       targetLines: 10,
-      waterRiseRate: 0.0006, // Moderate speed - 0.06% per second (1667 seconds = ~2.8 minutes to fill)
+      waterRiseRate: 0.0015, // Increased urgency - 0.15% per second (~11 minutes to fill)
       gracePeriod: 30000, // 30 seconds grace period
       baseDropTime: 1200, // Reverted to original speed
       environmentalHazards: [],
@@ -79,7 +79,7 @@ export class SeasonalManager {
       name: "Cherry Blossom Falls",
       description: "Pink petals drift down as the water rises faster",
       targetLines: 15,
-      waterRiseRate: 0.0007, // Slightly faster - 0.07% per second (1429 seconds = ~2.4 minutes to fill)
+      waterRiseRate: 0.0020, // Increased urgency - 0.20% per second (~8.3 minutes to fill)
       gracePeriod: 25000, // 25 seconds grace period
       baseDropTime: 1100, // Reverted to original speed
       environmentalHazards: [

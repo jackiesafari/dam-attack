@@ -26,8 +26,8 @@ export class Preloader extends Scene {
     //  Load the assets for the game - Replace with your own assets
     this.load.setPath('assets');
 
-    // Load the beaver logo for enhanced theming
-    this.load.image('beaverlogo', '/beaverlogo.png');
+    // Load the beaver logo for enhanced theming (path is relative to setPath above)
+    this.load.image('beaverlogo', 'beaverlogo.png');
   }
 
   create() {

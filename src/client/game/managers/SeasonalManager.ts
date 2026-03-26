@@ -28,6 +28,15 @@ export class SeasonalManager {
   private storyElements: Map<number, StoryElement[]> = new Map();
   private listeners: ((state: EnvironmentalState) => void)[] = [];
 
+  /**
+   * Some level configs were authored as "percent per second" values (e.g. 0.5 for 0.5%)
+   * while the runtime expects 0-1 fractional rise per second. Normalize large legacy values
+   * so later campaign levels don't instantly flood.
+   */
+  private normalizeWaterRiseRate(rate: number): number {
+    return rate > 0.1 ? rate / 100 : rate;
+  }
+
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
     this.initializeSeasonalLevels();
@@ -44,9 +53,9 @@ export class SeasonalManager {
       season: Season.SPRING,
       name: "First Thaw",
       description: "The ice begins to melt, and you must start building your first dam",
-      targetLines: 10,
-      waterRiseRate: 0.0015, // Increased urgency - 0.15% per second (~11 minutes to fill)
-      gracePeriod: 30000, // 30 seconds grace period
+      targetLines: 5, // Reduced for faster progression to level 2
+      waterRiseRate: 0.0060, // Increased urgency - 0.60% per second (~2.7 minutes to fill after grace period)
+      gracePeriod: 10000, // 10 seconds grace period (water starts rising sooner)
       baseDropTime: 1200, // Reverted to original speed
       environmentalHazards: [],
       wildlife: [
@@ -79,9 +88,9 @@ export class SeasonalManager {
       name: "Cherry Blossom Falls",
       description: "Pink petals drift down as the water rises faster",
       targetLines: 15,
-      waterRiseRate: 0.0020, // Increased urgency - 0.20% per second (~8.3 minutes to fill)
-      gracePeriod: 25000, // 25 seconds grace period
-      baseDropTime: 1100, // Reverted to original speed
+      waterRiseRate: 0.0033, // Still quicker than level 1, but the late push is less punishing
+      gracePeriod: 30000, // Give players a little longer to settle into the stronger current
+      baseDropTime: 1160, // Slightly slower than before so level 2 stays readable
       environmentalHazards: [
         {
           type: HazardType.SPRING_FLOOD,
@@ -163,7 +172,7 @@ export class SeasonalManager {
       name: "Morning Mist",
       description: "Gentle mist rises from the warming water",
       targetLines: 25,
-      waterRiseRate: 0.4, // Still manageable - 0.4% per second
+      waterRiseRate: 0.0045, // Moderate increase - 0.45% per second
       gracePeriod: 15000, // 15 seconds grace period
       baseDropTime: 950,
       environmentalHazards: [
@@ -205,7 +214,7 @@ export class SeasonalManager {
       name: "Spring's End",
       description: "The season transitions as summer approaches",
       targetLines: 30,
-      waterRiseRate: 0.5, // Moderate increase - 0.5% per second
+      waterRiseRate: 0.005, // Moderate increase - 0.5% per second
       gracePeriod: 10000, // 10 seconds grace period
       baseDropTime: 900,
       environmentalHazards: [
@@ -248,7 +257,7 @@ export class SeasonalManager {
       name: "Summer's Arrival",
       description: "Warm sunshine and steady water flow challenge your building skills",
       targetLines: 35,
-      waterRiseRate: 1.5,
+      waterRiseRate: 0.015, // 1.5% per second
       baseDropTime: 850,
       environmentalHazards: [
         {
@@ -298,7 +307,7 @@ export class SeasonalManager {
       name: "Dragonfly Dance",
       description: "Dragonflies perform aerial acrobatics above the water",
       targetLines: 40,
-      waterRiseRate: 1.7,
+      waterRiseRate: 0.017, // 1.7% per second
       baseDropTime: 800,
       environmentalHazards: [],
       wildlife: [
@@ -333,7 +342,7 @@ export class SeasonalManager {
       name: "Autumn's Arrival",
       description: "Leaves begin to fall as the water flows faster",
       targetLines: 60,
-      waterRiseRate: 2.5,
+      waterRiseRate: 0.025, // 2.5% per second
       baseDropTime: 650,
       environmentalHazards: [
         {
@@ -382,7 +391,7 @@ export class SeasonalManager {
       name: "First Frost",
       description: "Ice begins to form as winter arrives",
       targetLines: 80,
-      waterRiseRate: 2.0, // Slower due to ice
+      waterRiseRate: 0.02, // 2.0% per second, slower due to ice
       baseDropTime: 500,
       environmentalHazards: [
         {
@@ -441,7 +450,7 @@ export class SeasonalManager {
       name: "Eternal Winter",
       description: "The ultimate test - survive the harshest winter conditions",
       targetLines: 100,
-      waterRiseRate: 3.0,
+      waterRiseRate: 0.03, // 3.0% per second
       baseDropTime: 300,
       environmentalHazards: [
         {
@@ -614,7 +623,7 @@ export class SeasonalManager {
       currentLevel: firstLevel,
       waterLevel: {
         currentLevel: 0,
-        riseRate: firstLevel.waterRiseRate,
+        riseRate: this.normalizeWaterRiseRate(firstLevel.waterRiseRate),
         maxLevel: 1.0,
         visualHeight: 0,
         transparency: 0.7,
@@ -649,7 +658,8 @@ export class SeasonalManager {
   }
 
   public getCurrentWaterRiseRate(): number {
-    return this.environmentalState.currentLevel.waterRiseRate || 0.0006; // Default moderate speed
+    const configuredRate = this.environmentalState.currentLevel.waterRiseRate;
+    return this.normalizeWaterRiseRate(configuredRate || 0.0006); // Default moderate speed
   }
 
   public getEnvironmentalState(): EnvironmentalState {
@@ -666,7 +676,7 @@ export class SeasonalManager {
     this.environmentalState.currentLevel = level;
     this.environmentalState.currentSeason = level.season;
     this.environmentalState.currentWorld = level.world;
-    this.environmentalState.waterLevel.riseRate = level.waterRiseRate;
+    this.environmentalState.waterLevel.riseRate = this.normalizeWaterRiseRate(level.waterRiseRate);
     
     // Update ambient lighting based on season
     this.updateAmbientLighting(level.season);

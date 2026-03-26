@@ -114,7 +114,7 @@ export class LevelSelect extends Scene {
 
   private createUI(): void {
     // Title
-    this.titleText = this.add.text(400, 50, 'Dam Attack - Campaign', {
+    this.titleText = this.add.text(400, 50, 'Dam Attack - Dam Quest', {
       fontSize: '36px',
       color: '#FFD700',
       fontFamily: 'Arial Black',

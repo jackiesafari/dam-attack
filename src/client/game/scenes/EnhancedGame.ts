@@ -24,6 +24,38 @@ import {
   AnimationType
 } from '../types/EnvironmentalTypes';
 import { GamePiece, PieceType } from '../types/GameTypes';
+import { TelemetryCollector } from '../managers/TelemetryCollector';
+import { BoardAnalyzer } from '../utils/BoardAnalyzer';
+
+interface CampaignStoryBeat {
+  chapterTitle: string;
+  levelLabel: string;
+  title: string;
+  text: string;
+  buttonLabel: string;
+}
+
+interface CampaignCompletionBeat {
+  banner: string;
+  title: string;
+  summary: string;
+  celebration: string;
+  nextHint: string;
+  buttonLabel: string;
+}
+
+interface IntroModalLayout {
+  signWidth: number;
+  signHeight: number;
+  chapterY: number;
+  titleY: number;
+  subtitleY: number;
+  storyCardY: number;
+  storyCardHeight: number;
+  buttonY: number;
+  modalScale: number;
+  storyTextStyle: Phaser.Types.GameObjects.Text.TextStyle;
+}
 
 export class EnhancedGame extends Scene {
   // Core managers
@@ -34,6 +66,7 @@ export class EnhancedGame extends Scene {
   private waterLevelManager!: WaterLevelManager;
   private levelProgressionManager!: LevelProgressionManager;
   private themeManager!: ThemeManager;
+  private telemetryCollector!: TelemetryCollector;
   
   // Rendering systems
   private environmentalRenderer!: EnvironmentalRenderer;
@@ -63,6 +96,13 @@ export class EnhancedGame extends Scene {
   private seasonText!: Phaser.GameObjects.Text;
   private countdownText!: Phaser.GameObjects.Text;
   private futuristicTimer!: FuturisticTimer;
+  private showEnvironmentalText: boolean = false;
+  private displayedScore: number = 0;
+  private scoreTween: Phaser.Tweens.Tween | null = null;
+  private scoreTarget: number = 0;
+  private nextPieceTitleText?: Phaser.GameObjects.Text;
+  private nextPieceAreaWidth: number = 0;
+  private nextPieceAreaHeight: number = 0;
   
   // Beaver character and messaging
   private beaverContainer!: Phaser.GameObjects.Container;
@@ -73,7 +113,7 @@ export class EnhancedGame extends Scene {
   // OPTIMIZED: Proper timing system
   private lastTime: number = 0;
   private dropCounter: number = 0;
-  private dropInterval: number = 1000; // Base 1 second drop interval
+  private dropInterval: number = 500; // Base 500ms drop interval (faster gameplay)
   
   // NEW: Seasonal effect properties
   private seasonalDropSpeedMultiplier: number = 1.0;
@@ -84,6 +124,12 @@ export class EnhancedGame extends Scene {
   private gameStartTime: number = 0;
   private lastSurvivalBonus: number = 0;
   private survivalBonusInterval: number = 30000; // 30 seconds
+  
+  // Telemetry tracking
+  private piecesPlacedCount: number = 0;
+  private lastBoardAnalysisPieceCount: number = 0;
+  private lastStackHeight: number = 0;
+  private nearDeathState: boolean = false;
   
   // Debug frame counter
   private frameCount: number = 0;
@@ -130,6 +176,7 @@ export class EnhancedGame extends Scene {
     this.load.image('beaverlogo', '/assets/beaverlogo.png');
     // Level complete beaver (for wooden sign)
     this.load.image('levelCompleteBeaver', '/assets/level-complete-beaver.png');
+    this.load.image('chapter1Signage', '/assets/chapter1-signage.png');
   }
 
   create() {
@@ -198,6 +245,10 @@ export class EnhancedGame extends Scene {
     // Initialize water rise rate from seasonal manager
     const initialRiseRate = this.seasonalManager.getCurrentWaterRiseRate();
     this.waterLevelManager.setRiseRate(initialRiseRate);
+    
+    // Telemetry collector (Phase 1: Foundation)
+    this.telemetryCollector = new TelemetryCollector();
+    this.telemetryCollector.setCurrentLevel(this.currentLevel);
     
     // Layout system with minimal UI
     this.layoutSystem = new MobileFirstLayoutSystem(this, {
@@ -292,128 +343,188 @@ export class EnhancedGame extends Scene {
     const { width, height } = this.scale;
     const isMobile = width < 600;
     
-    // REDESIGNED: Proper visual hierarchy - stats get priority
+    // REDESIGNED: Simplified score box (match inspiration layout)
     const panelWidth = isMobile ? 160 : 190;
-    const panelHeight = isMobile ? 100 : 120;
-    const panelX = isMobile ? 5 : 15;
-    const panelY = isMobile ? 5 : 15;
+    const panelHeight = isMobile ? 120 : 140;
+    const panelX = isMobile ? 8 : 14;
+    const panelY = isMobile ? 8 : 14;
     
-    // Main panel background
+    // Main panel background (gradient)
     const scorePanel = this.add.graphics();
-    scorePanel.fillStyle(0x0a1428, 0.95);
-    scorePanel.lineStyle(2, 0x00FFFF, 0.8);
-    scorePanel.fillRoundedRect(panelX, panelY, panelWidth, panelHeight, 6);
-    scorePanel.strokeRoundedRect(panelX, panelY, panelWidth, panelHeight, 6);
+    scorePanel.fillGradientStyle(0x0A1628, 0x0A1628, 0x1A2847, 0x1A2847, 0.98);
+    scorePanel.fillRoundedRect(panelX, panelY, panelWidth, panelHeight, 8);
+    scorePanel.lineStyle(2, 0x00FFFF, 0.6);
+    scorePanel.strokeRoundedRect(panelX, panelY, panelWidth, panelHeight, 8);
     
-    // Inner accent border
-    scorePanel.lineStyle(1, 0x4DFFFF, 0.6);
-    scorePanel.strokeRoundedRect(panelX + 6, panelY + 6, panelWidth - 12, panelHeight - 12, 4);
-    
-    // REDESIGNED: Minimal title section - much smaller
-    const titleBg = this.add.graphics();
-    titleBg.fillStyle(0x1a2040, 0.6); // More subtle background
-    titleBg.fillRoundedRect(panelX + 8, panelY + 8, panelWidth - 16, 16, 3); // Much smaller height
-    
-    // REDESIGNED: Smaller, less prominent title
-    const titleText = this.add.text(panelX + panelWidth/2, panelY + 16, 'DAM ATTACK', {
-      fontSize: isMobile ? '8px' : '10px', // Much smaller font
-      color: '#FFD700',
-      fontFamily: 'Arial Black',
-      align: 'center'
-    }).setOrigin(0.5);
-    
-    // REDESIGNED: Stats section with proper spacing and hierarchy
-    const statsBg = this.add.graphics();
-    statsBg.fillStyle(0x0f1a2e, 0.9);
-    statsBg.fillRoundedRect(panelX + 8, panelY + 28, panelWidth - 16, panelHeight - 36, 3);
+    // Subtle animated glow
+    const scoreGlow = this.add.graphics();
+    scoreGlow.lineStyle(3, 0x66D9EF, 0.25);
+    scoreGlow.strokeRoundedRect(panelX - 2, panelY - 2, panelWidth + 4, panelHeight + 4, 10);
+    this.tweens.add({
+      targets: scoreGlow,
+      alpha: 0.6,
+      duration: 1600,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
     
     // REDESIGNED: Better font sizes and spacing for readability
-    const primaryFontSize = isMobile ? '11px' : '13px'; // Larger for primary stats
-    const secondaryFontSize = isMobile ? '9px' : '11px'; // Medium for secondary stats
-    const tertiaryFontSize = isMobile ? '8px' : '10px'; // Smaller for tertiary info
+    const labelFontSize = isMobile ? '11px' : '13px';
+    const scoreValueSize = isMobile ? '24px' : '30px';
+    const statValueSize = isMobile ? '15px' : '17px';
+    const tertiaryFontSize = isMobile ? '10px' : '11px';
     
-    // REDESIGNED: Proper spacing system - more breathing room
-    const lineSpacing = 16; // Increased from 12px
-    const startY = panelY + 40; // Better starting position
+    // Layout: SCORE label, big number, then LEVEL / LINES row
+    const paddingTop = 18;
+    const titleY = panelY + paddingTop;
+    const scoreY = titleY + (isMobile ? 18 : 22);
+    const statsRowY = scoreY + (isMobile ? 24 : 28);
+    const statColumnOffset = isMobile ? 34 : 40;
     
-    // PRIMARY STATS (Most Important) - Larger, more prominent
-    this.scoreText = this.add.text(panelX + panelWidth/2, startY, 'SCORE: 000000', {
-      fontSize: primaryFontSize,
-      color: '#00FF88',
-      fontFamily: 'Arial Black',
+    const scoreLabel = this.add.text(panelX + panelWidth/2, titleY, 'SCORE', {
+      fontSize: labelFontSize,
+      color: '#F5F7FF',
+      fontFamily: '"Barlow Condensed", "Arial", sans-serif',
+      fontStyle: 'bold',
       align: 'center'
     }).setOrigin(0.5);
     
-    this.levelText = this.add.text(panelX + panelWidth/2, startY + lineSpacing, 'LEVEL: 01', {
-      fontSize: primaryFontSize,
-      color: '#00FFFF',
-      fontFamily: 'Arial Black',
+    this.scoreText = this.add.text(panelX + panelWidth/2, scoreY, '000000', {
+      fontSize: scoreValueSize,
+      color: '#EAF6FF',
+      fontFamily: '"Barlow Condensed", "Arial", sans-serif',
+      fontStyle: 'bold',
       align: 'center'
     }).setOrigin(0.5);
     
-    // SECONDARY STATS - Medium prominence
-    this.linesText = this.add.text(panelX + panelWidth/2, startY + lineSpacing * 2, 'LINES: 000', {
-      fontSize: secondaryFontSize,
-      color: '#FFD700',
-      fontFamily: 'Arial Black',
+    const levelLabel = this.add.text(panelX + panelWidth/2 - statColumnOffset, statsRowY, 'LEVEL', {
+      fontSize: labelFontSize,
+      color: '#F5F7FF',
+      fontFamily: '"Barlow Condensed", "Arial", sans-serif',
+      fontStyle: 'bold',
       align: 'center'
     }).setOrigin(0.5);
     
-    // TERTIARY INFO - Smaller, less prominent
-    this.waterLevelText = this.add.text(panelX + panelWidth/2, startY + lineSpacing * 3, 'WATER: 00%', {
+    const linesLabel = this.add.text(panelX + panelWidth/2 + statColumnOffset, statsRowY, 'LINES', {
+      fontSize: labelFontSize,
+      color: '#F5F7FF',
+      fontFamily: '"Barlow Condensed", "Arial", sans-serif',
+      fontStyle: 'bold',
+      align: 'center'
+    }).setOrigin(0.5);
+    
+    this.levelText = this.add.text(panelX + panelWidth/2 - statColumnOffset, statsRowY + (isMobile ? 12 : 14), '01', {
+      fontSize: statValueSize,
+      color: '#EAF6FF',
+      fontFamily: '"Barlow Condensed", "Arial", sans-serif',
+      fontStyle: 'bold',
+      align: 'center'
+    }).setOrigin(0.5);
+    
+    this.linesText = this.add.text(panelX + panelWidth/2 + statColumnOffset, statsRowY + (isMobile ? 12 : 14), '000', {
+      fontSize: statValueSize,
+      color: '#EAF6FF',
+      fontFamily: '"Barlow Condensed", "Arial", sans-serif',
+      fontStyle: 'bold',
+      align: 'center'
+    }).setOrigin(0.5);
+    
+    // Dividers to separate sections
+    const divider = this.add.graphics();
+    divider.lineStyle(1, 0x4DFFFF, 0.4);
+    divider.moveTo(panelX + 14, scoreY + (isMobile ? 14 : 16));
+    divider.lineTo(panelX + panelWidth - 14, scoreY + (isMobile ? 14 : 16));
+    divider.strokePath();
+    divider.lineStyle(1, 0x4DFFFF, 0.35);
+    divider.moveTo(panelX + panelWidth/2, statsRowY - 6);
+    divider.lineTo(panelX + panelWidth/2, statsRowY + (isMobile ? 20 : 22));
+    divider.strokePath();
+    
+    // TERTIARY INFO - moved below panel to keep the box uncluttered
+    const metaStartY = panelY + panelHeight + (isMobile ? 10 : 12);
+    this.waterLevelText = this.add.text(panelX + panelWidth/2, metaStartY, 'WATER: 00%', {
       fontSize: tertiaryFontSize,
       color: '#4169E1',
-      fontFamily: 'Arial',
+      fontFamily: '"Barlow Condensed", "Arial", sans-serif',
       align: 'center'
     }).setOrigin(0.5);
     
-    this.seasonText = this.add.text(panelX + panelWidth/2, startY + lineSpacing * 4, 'SPRING', {
+    this.seasonText = this.add.text(panelX + panelWidth/2, metaStartY + (isMobile ? 12 : 14), 'SPRING', {
       fontSize: tertiaryFontSize,
       color: '#98FB98',
-      fontFamily: 'Arial',
+      fontFamily: '"Barlow Condensed", "Arial", sans-serif',
       align: 'center'
     }).setOrigin(0.5);
+    
+    // Hide environmental text in Campaign for now (simplified UI)
+    this.waterLevelText.setVisible(this.showEnvironmentalText);
+    this.seasonText.setVisible(this.showEnvironmentalText);
     
     // REDESIGNED: Compact next piece preview
-    const nextPieceWidth = isMobile ? 80 : 100;
-    const nextPieceHeight = isMobile ? 60 : 75;
-    const nextPieceX = width - nextPieceWidth - (isMobile ? 5 : 15);
+    const nextPieceWidth = Math.round((isMobile ? 80 : 100) * 1.35);
+    const nextPieceHeight = Math.round((isMobile ? 60 : 75) * 1.35);
+    const nextPieceX = width - nextPieceWidth - (isMobile ? 8 : 16);
     const nextPieceY = panelY;
     
-    // Store next piece position for rendering
-    this.nextPieceX = nextPieceX + 8;
-    this.nextPieceY = nextPieceY + 25;
+    // Store next piece position for rendering (centered in the panel)
+    this.nextPieceAreaWidth = nextPieceWidth - (isMobile ? 20 : 24);
+    this.nextPieceAreaHeight = nextPieceHeight - (isMobile ? 32 : 36);
+    this.nextPieceX = nextPieceX + (nextPieceWidth - this.nextPieceAreaWidth) / 2;
+    this.nextPieceY = nextPieceY + (nextPieceHeight - this.nextPieceAreaHeight) / 2 + (isMobile ? 4 : 6);
     
-    // Next piece panel
+    // Next piece panel (gradient + glow)
     const nextPiecePanel = this.add.graphics();
-    nextPiecePanel.lineStyle(3, 0x00FFFF, 0.3);
-    nextPiecePanel.strokeRoundedRect(nextPieceX - 2, nextPieceY - 2, nextPieceWidth + 4, nextPieceHeight + 4, 6);
+    nextPiecePanel.fillGradientStyle(0x0A1628, 0x0A1628, 0x1A2847, 0x1A2847, 0.98);
+    nextPiecePanel.fillRoundedRect(nextPieceX, nextPieceY, nextPieceWidth, nextPieceHeight, 8);
+    nextPiecePanel.lineStyle(2, 0x00FFFF, 0.6);
+    nextPiecePanel.strokeRoundedRect(nextPieceX, nextPieceY, nextPieceWidth, nextPieceHeight, 8);
     
-    nextPiecePanel.fillStyle(0x0a1428, 0.95);
-    nextPiecePanel.lineStyle(2, 0x00FFFF, 0.8);
-    nextPiecePanel.fillRoundedRect(nextPieceX, nextPieceY, nextPieceWidth, nextPieceHeight, 4);
-    nextPiecePanel.strokeRoundedRect(nextPieceX, nextPieceY, nextPieceWidth, nextPieceHeight, 4);
+    const nextPieceGlow = this.add.graphics();
+    nextPieceGlow.lineStyle(3, 0x66D9EF, 0.25);
+    nextPieceGlow.strokeRoundedRect(nextPieceX - 2, nextPieceY - 2, nextPieceWidth + 4, nextPieceHeight + 4, 10);
+    this.tweens.add({
+      targets: nextPieceGlow,
+      alpha: 0.6,
+      duration: 1600,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
     
     // REDESIGNED: Better next piece title
-    const nextPieceTitle = this.add.text(nextPieceX + nextPieceWidth/2, nextPieceY + 8, 'NEXT', {
-      fontSize: isMobile ? '10px' : '12px',
-      color: '#FFFF00',
-      fontFamily: 'Arial Black',
+    this.nextPieceTitleText = this.add.text(nextPieceX + nextPieceWidth/2, nextPieceY + (isMobile ? 14 : 16), 'NEXT', {
+      fontSize: isMobile ? '16px' : '19px',
+      color: '#F5F7FF',
+      fontFamily: '"Barlow Condensed", "Arial", sans-serif',
+      fontStyle: 'bold',
       align: 'center'
     }).setOrigin(0.5);
+    
+    this.tweens.add({
+      targets: this.nextPieceTitleText,
+      scale: 1.05,
+      duration: 1400,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
     
     this.uiContainer.add([
       scorePanel,
-      titleBg,
-      titleText,
-      statsBg,
+      scoreGlow,
+      scoreLabel,
       this.scoreText,
+      levelLabel,
+      linesLabel,
       this.levelText,
       this.linesText,
+      divider,
       this.waterLevelText,
       this.seasonText,
       nextPiecePanel,
-      nextPieceTitle
+      nextPieceGlow,
+      this.nextPieceTitleText
     ]);
   }
 
@@ -572,14 +683,21 @@ export class EnhancedGame extends Scene {
   }
 
   private startGame(): void {
-    console.log('📖 Starting game - showing opening story');
-    // Show opening story element
-    this.showOpeningStory();
+    console.log('📖 Starting game');
+
+    if (this.gameMode === 'campaign') {
+      this.showLevelIntro(this.currentLevel);
+      return;
+    }
+
+    this.resumeGameplay();
   }
 
   private resumeGameplay(): void {
     // This is called after story dismissal - preserve current game state
     console.log('🔄 Resuming gameplay - preserving current state');
+    this.lastTime = 0;
+    this.syncCurrentLevelState();
     
     const currentState = this.gameStateManager.getState();
     console.log('📊 Current state:', {
@@ -603,6 +721,28 @@ export class EnhancedGame extends Scene {
       console.log('🎯 First time starting - initializing gameplay');
       this.startActualGameplay();
       return;
+    }
+
+    const isNewLevelStart = this.telemetryCollector.getCurrentLevel() !== this.currentLevel;
+    
+    // TELEMETRY: Record level start if resuming (for level transitions)
+    // Only record if we haven't already started this level
+    if (isNewLevelStart) {
+      this.telemetryCollector.setCurrentLevel(this.currentLevel);
+      this.telemetryCollector.recordEvent('level_start', {
+        level: this.currentLevel,
+        waterLevel: this.waterLevelManager.getCurrentLevel(),
+        timeElapsed: Date.now() - this.gameStartTime
+      });
+      
+      // Reset telemetry tracking for new level
+      this.piecesPlacedCount = 0;
+      this.lastBoardAnalysisPieceCount = 0;
+      this.lastStackHeight = 0;
+      this.nearDeathState = false;
+
+      const gracePeriod = this.seasonalManager.getCurrentGracePeriod();
+      this.futuristicTimer.start(gracePeriod);
     }
     
     // Only spawn a new piece if we don't have one
@@ -634,6 +774,7 @@ export class EnhancedGame extends Scene {
   private startActualGameplay(): void {
     // This is called ONLY for initial game start - resets everything
     console.log('🎯 Starting actual gameplay (INITIAL START)...');
+    this.lastTime = 0;
     
     // Initialize game state with proper board
     console.log('🏗️ Creating empty board');
@@ -647,9 +788,10 @@ export class EnhancedGame extends Scene {
       nextPiece: null,
       isGameOver: false,
       isPaused: false,
-      level: 1,
+      level: this.currentLevel,
       score: 0,
-      lines: 0
+      lines: 0,
+      timeElapsed: 0
     });
     
     console.log('✅ Game state initialized with board:', emptyBoard.length, 'x', emptyBoard[0].length);
@@ -684,12 +826,26 @@ export class EnhancedGame extends Scene {
     });
     
     // Start the water timer (match grace period duration)
-    this.futuristicTimer.start(30000); // 30 seconds to match grace period
+    this.futuristicTimer.start(this.seasonalManager.getCurrentGracePeriod());
     
     // Show mobile controls when gameplay actually starts
     if (this.mobileControlsUI) {
       this.mobileControlsUI.setVisible(true);
     }
+    
+    // TELEMETRY: Record level start event
+    this.telemetryCollector.setCurrentLevel(this.currentLevel);
+    this.telemetryCollector.recordEvent('level_start', {
+      level: this.currentLevel,
+      waterLevel: this.waterLevelManager.getCurrentLevel(),
+      timeElapsed: 0
+    });
+    
+    // Reset telemetry tracking for new level
+    this.piecesPlacedCount = 0;
+    this.lastBoardAnalysisPieceCount = 0;
+    this.lastStackHeight = 0;
+    this.nearDeathState = false;
     
     console.log('🎮 Actual gameplay setup complete!');
   }
@@ -706,24 +862,234 @@ export class EnhancedGame extends Scene {
     });
   }
 
-  private showOpeningStory(): void {
-    console.log('📚 Creating opening story element');
-    const openingStory: StoryElement = {
-      type: StoryType.LEVEL_START,
-      triggerLevel: this.currentLevel,
-      content: {
-        title: "The Great Dam: A New Beginning",
-        text: "The spring thaw has begun! Help our beaver friend build the ultimate dam to protect the forest from rising waters. Stack wooden pieces with precision, battling water levels and the ever-changing seasons. From the gentle Spring Thaw..."
+  private syncCurrentLevelState(): void {
+    if (!this.gameStateManager) {
+      return;
+    }
+
+    const state = this.gameStateManager.getState();
+    if (state.level !== this.currentLevel) {
+      this.gameStateManager.updateState({ level: this.currentLevel });
+    }
+  }
+
+  private getCampaignStoryBeat(levelNumber: number): CampaignStoryBeat {
+    const beaverName = 'Maple';
+    const storyByLevel: Record<number, CampaignStoryBeat> = {
+      1: {
+        chapterTitle: 'Chapter 1: First Twigs',
+        levelLabel: 'Spring Thaw',
+        title: `${beaverName} Finds a Brave New Builder`,
+        text: `${beaverName} the beaver has spotted the first spring melt. With the creek waking up, she asks for your help placing the very first logs so every burrow downstream stays cozy and dry.`,
+        buttonLabel: "Let's go!"
       },
-      presentation: {
-        displayDuration: 0, // Manual dismiss
-        pauseGameplay: true,
-        animationType: AnimationType.FADE_IN
+      2: {
+        chapterTitle: 'Chapter 2: Petals on the Water',
+        levelLabel: 'Cherry Blossom Falls',
+        title: 'A Stronger Start',
+        text: `Cherry blossoms drift past the half-built dam, and ${beaverName} beams with pride. The foundation is holding, but the current is quicker now, so each careful stack helps the whole forest breathe easier.`,
+        buttonLabel: 'Continue'
+      },
+      3: {
+        chapterTitle: 'Chapter 3: Busy Paws',
+        levelLabel: "Beaver's First Helper",
+        title: `${beaverName} Makes a Friend`,
+        text: `Word spreads through the meadow that a kind builder is helping ${beaverName}. Another young beaver paddles over with extra twigs, and together you turn a simple barrier into a real home for the riverbank.`,
+        buttonLabel: 'Continue'
+      },
+      4: {
+        chapterTitle: 'Chapter 4: Misty Morning',
+        levelLabel: 'Morning Mist',
+        title: 'Trust in the Team',
+        text: `Soft mist curls over the water while birds sing from the reeds. ${beaverName} has started trusting your timing completely, and every neat placement makes the dam feel steadier and warmer.`,
+        buttonLabel: 'Continue'
+      },
+      5: {
+        chapterTitle: 'Chapter 5: Spring Finale',
+        levelLabel: "Spring's End",
+        title: 'The Forest Takes Notice',
+        text: `By the end of spring, frogs, fish, and songbirds gather nearby to watch. ${beaverName} knows the dam is no longer just a project. It is becoming a promise to protect everyone through the seasons ahead.`,
+        buttonLabel: 'Continue'
+      },
+      6: {
+        chapterTitle: 'Chapter 6: Summer Sun',
+        levelLabel: "Summer's Arrival",
+        title: 'Warm Days, Quick Water',
+        text: `Summer sunlight glitters on the creek, and the flow grows more confident. ${beaverName} wipes her brow, grins, and says this is when careful builders become true guardians of the stream.`,
+        buttonLabel: 'Continue'
+      },
+      7: {
+        chapterTitle: 'Chapter 7: Dragonfly Parade',
+        levelLabel: 'Dragonfly Dance',
+        title: 'A Little Celebration',
+        text: `Dragonflies weave bright loops over the water as if cheering you on. Even while the pace picks up, ${beaverName} keeps the mood light, reminding everyone that hard work can still feel joyful.`,
+        buttonLabel: 'Continue'
+      },
+      8: {
+        chapterTitle: 'Chapter 8: Sunlit Rhythm',
+        levelLabel: 'Summer Midstream',
+        title: 'Building by Instinct',
+        text: `The team falls into a happy rhythm: splash, stack, smile, repeat. ${beaverName} can already picture little paws scampering safely across the dam when the river runs wild again.`,
+        buttonLabel: 'Continue'
+      },
+      9: {
+        chapterTitle: 'Chapter 9: Ripples of Courage',
+        levelLabel: 'Golden Current',
+        title: 'Steady Under Pressure',
+        text: `The creek presses harder now, but so does your confidence. ${beaverName} notices how calmly you shape each opening into strength, and she says the dam is beginning to feel brave.`,
+        buttonLabel: 'Continue'
+      },
+      10: {
+        chapterTitle: 'Chapter 10: Summer Promise',
+        levelLabel: 'High Sun Crossing',
+        title: 'Ready for What Comes Next',
+        text: `At the end of summer, the dam stretches proudly from bank to bank. The animals share berries and clover nearby, while ${beaverName} quietly wonders if it can stay strong when autumn winds arrive.`,
+        buttonLabel: 'Continue'
+      },
+      11: {
+        chapterTitle: 'Chapter 11: Falling Leaves',
+        levelLabel: "Autumn's Arrival",
+        title: 'A New Test Begins',
+        text: `Leaves tumble across the water in russet spirals as autumn sweeps in. ${beaverName} checks every corner of the dam, grateful that you are here for the season that asks the most of builders.`,
+        buttonLabel: 'Continue'
+      },
+      12: {
+        chapterTitle: 'Chapter 12: Rustling Banks',
+        levelLabel: 'Harvest Run',
+        title: 'Holding Fast',
+        text: `Squirrels stash acorns along the shore while the river hurries past. ${beaverName} keeps everyone focused and kind, turning nervous energy into teamwork one sturdy layer at a time.`,
+        buttonLabel: 'Continue'
+      },
+      13: {
+        chapterTitle: 'Chapter 13: Bright Courage',
+        levelLabel: 'Amber Rapids',
+        title: 'The Dam Gets Its Heart',
+        text: `By now the dam does more than block water. It shelters minnows, steadies nests, and quiets the banks at night. ${beaverName} says your careful building has given the whole place a heart.`,
+        buttonLabel: 'Continue'
+      },
+      14: {
+        chapterTitle: 'Chapter 14: Windy Workday',
+        levelLabel: 'Whistling Bend',
+        title: 'Calm in the Gusts',
+        text: `Autumn gusts tug at every loose branch, but you keep building with patient hands. ${beaverName} laughs between the windblown leaves and calls you the calmest builder in the valley.`,
+        buttonLabel: 'Continue'
+      },
+      15: {
+        chapterTitle: 'Chapter 15: Last Leaf',
+        levelLabel: 'Autumn Finale',
+        title: 'Almost There',
+        text: `The last leaves drift down and settle against the dam like tiny thank-you notes. ${beaverName} knows winter will be tough, yet the forest now believes this dam just might weather anything.`,
+        buttonLabel: 'Continue'
+      },
+      16: {
+        chapterTitle: 'Chapter 16: First Frost',
+        levelLabel: 'Winter Freeze',
+        title: 'Cold Air, Warm Hearts',
+        text: `Frost gathers along the banks and the world turns quiet and silver. ${beaverName} speaks softly so no one worries: the cold may be sharp, but shared effort can still make the river feel safe.`,
+        buttonLabel: 'Continue'
+      },
+      17: {
+        chapterTitle: 'Chapter 17: Snowy Vigil',
+        levelLabel: 'Crystal Drifts',
+        title: 'Guardians of the Creek',
+        text: `Snowflakes settle on every log you place, sparkling like little lanterns. The animals huddle close, and ${beaverName} keeps watch with you, proud of how the dam stands through the storm.`,
+        buttonLabel: 'Continue'
+      },
+      18: {
+        chapterTitle: 'Chapter 18: Ice and Patience',
+        levelLabel: 'Frozen Channel',
+        title: 'Strength in Small Moves',
+        text: `Winter teaches a slower kind of courage. ${beaverName} reminds everyone that even tiny, careful placements matter when the cold tries to rush your thinking.`,
+        buttonLabel: 'Continue'
+      },
+      19: {
+        chapterTitle: 'Chapter 19: Lanterns in the Snow',
+        levelLabel: 'Moonlit Freeze',
+        title: 'The Whole Forest Helps',
+        text: `Fireflies from warmer hollows, owls from the pine line, and rabbits from the brush all gather near. No one can move the logs for you, but their quiet faith makes ${beaverName} smile wider than ever.`,
+        buttonLabel: 'Continue'
+      },
+      20: {
+        chapterTitle: 'Chapter 20: Safe at Last',
+        levelLabel: 'Eternal Winter',
+        title: 'The Dam Holds',
+        text: `The harshest water finally meets the dam and cannot break it. ${beaverName} lets out a happy splash, and the whole forest celebrates together as birds sing, tails slap the water, and every cozy home stays safe through the night.`,
+        buttonLabel: "Let's go!"
       }
     };
-    
-    console.log('🎭 Displaying story element');
-    this.displayStoryElement(openingStory);
+
+    return storyByLevel[levelNumber] || {
+      chapterTitle: `Chapter ${levelNumber}`,
+      levelLabel: `Level ${levelNumber}`,
+      title: `${beaverName} Keeps Building`,
+      text: `${beaverName} takes a breath, checks the river, and smiles. Another stretch of water lies ahead, and every careful stack brings the dam one step closer to keeping the forest safe.`,
+      buttonLabel: 'Continue'
+    };
+  }
+
+  private getCampaignCompletionBeat(levelNumber: number, isFinalLevel: boolean): CampaignCompletionBeat {
+    const completionByLevel: Record<number, CampaignCompletionBeat> = {
+      1: {
+        banner: 'Chapter One Complete',
+        title: 'The First Wall Holds',
+        summary: 'Maple pats the fresh timber with a proud grin. The creek has been nudged into a calmer path, and the first homes downstream already feel safer.',
+        celebration: 'Birdsong skips across the water while cherry petals drift over your newly finished foundation.',
+        nextHint: 'Next, the current quickens at Cherry Blossom Falls.',
+        buttonLabel: 'See Level 2'
+      },
+      2: {
+        banner: 'A Stronger Dam',
+        title: 'Petals and Progress',
+        summary: 'The half-built dam now looks intentional, sturdy, and full of heart. Maple can see where the future lodge path will rest.',
+        celebration: 'The riverbank glows with blossom pink as the forest settles into a relieved, happy hush.',
+        nextHint: 'A new helper is paddling in for the next chapter.',
+        buttonLabel: 'Meet the Helper'
+      },
+      3: {
+        banner: 'Busy Paws Rewarded',
+        title: 'Teamwork Takes Root',
+        summary: 'With extra paws and steady stacking, the dam begins to feel like a shared promise instead of a hopeful experiment.',
+        celebration: 'Tiny ripples sparkle where the young beavers splash and celebrate your work.',
+        nextHint: 'Morning mist rolls in on the next stretch of water.',
+        buttonLabel: 'Into the Mist'
+      },
+      4: {
+        banner: 'Morning Mist Cleared',
+        title: 'Confidence on the Water',
+        summary: 'Even through the haze, your placements kept the structure strong. Maple now trusts the dam to answer each new ripple with calm strength.',
+        celebration: 'Dragonflies skim the waterline like little lanterns marking the path ahead.',
+        nextHint: 'One final spring push stands between you and summer.',
+        buttonLabel: 'Finish Spring'
+      },
+      5: {
+        banner: 'Spring Protected',
+        title: 'The Forest Notices',
+        summary: 'By the close of spring, the dam stands as a real shelter. Maple watches animals gather nearby and realizes the whole valley is rooting for you now.',
+        celebration: 'Frogs croak, fish circle below, and every branch in the air seems to clap in approval.',
+        nextHint: 'Summer arrives with brighter skies and faster water.',
+        buttonLabel: 'Welcome Summer'
+      }
+    };
+
+    if (isFinalLevel) {
+      return {
+        banner: 'Final Chapter',
+        title: 'The Dam Is Safe',
+        summary: 'Maple and the forest made it through every season. The dam stands firm, the water is guided gently aside, and every burrow, nest, and den stays warm and dry.',
+        celebration: 'Beavers slap the water in applause while birds, rabbits, and frogs gather for one joyful riverside celebration.',
+        nextHint: 'Your story is complete, and the valley will remember this winter as the season the dam held.',
+        buttonLabel: 'Celebrate'
+      };
+    }
+
+    return completionByLevel[levelNumber] || {
+      banner: `Level ${levelNumber} Cleared`,
+      title: 'Another Chapter Secured',
+      summary: 'Maple checks the dam, nods happily, and calls this stretch of river safe for another day.',
+      celebration: 'The forest responds with quiet, grateful celebration around the shoreline.',
+      nextHint: 'A fresh challenge waits just upstream.',
+      buttonLabel: 'Continue Story'
+    };
   }
 
   private handleInput(action: InputAction): void {
@@ -858,6 +1224,35 @@ export class EnhancedGame extends Scene {
     const newBoard = this.pieceManager.placePiece(state.currentPiece, state.board);
     console.log('New board after placing piece:', !!newBoard);
     
+    // TELEMETRY: Analyze board before line clearing
+    const boardAnalysis = BoardAnalyzer.analyzeBoard(newBoard, 20);
+    
+    // TELEMETRY: Record piece placement event
+    this.piecesPlacedCount++;
+    this.telemetryCollector.recordEvent('piece_placed', {
+      pieceType: state.currentPiece.type,
+      placementX: state.currentPiece.x,
+      placementY: state.currentPiece.y,
+      stackHeight: boardAnalysis.stackHeight,
+      holesCount: boardAnalysis.holesCount,
+      overhangsCount: boardAnalysis.overhangsCount,
+      boardDensity: boardAnalysis.boardDensity,
+      level: this.currentLevel,
+      waterLevel: this.waterLevelManager.getCurrentLevel()
+    });
+    
+    // Update level summary
+    this.telemetryCollector.updateLevelSummary(this.currentLevel, {
+      timestamp: Date.now(),
+      eventType: 'piece_placed',
+      data: {
+        pieceType: state.currentPiece.type,
+        stackHeight: boardAnalysis.stackHeight,
+        holesCount: boardAnalysis.holesCount,
+        level: this.currentLevel
+      }
+    });
+    
     // Check for line clears with error handling
     let clearedBoard = newBoard;
     let linesCleared = 0;
@@ -919,6 +1314,36 @@ export class EnhancedGame extends Scene {
     if (linesCleared > 0) {
       console.log('Lines cleared:', linesCleared);
       
+      // TELEMETRY: Record line clear event
+      const clearType = linesCleared === 1 ? 'single' : 
+                       linesCleared === 2 ? 'double' : 
+                       linesCleared === 3 ? 'triple' : 'tetris';
+      
+      // Analyze board after clearing to check if it was planned (simplified heuristic)
+      const clearedBoardAnalysis = BoardAnalyzer.analyzeBoard(clearedBoard, 20);
+      const wasPlanned = linesCleared >= 2; // Assume multi-line clears are planned
+      
+      this.telemetryCollector.recordEvent('line_cleared', {
+        linesCleared,
+        clearType,
+        wasPlanned,
+        level: this.currentLevel,
+        waterLevel: this.waterLevelManager.getCurrentLevel(),
+        stackHeight: clearedBoardAnalysis.stackHeight
+      });
+      
+      // Update level summary
+      this.telemetryCollector.updateLevelSummary(this.currentLevel, {
+        timestamp: Date.now(),
+        eventType: 'line_cleared',
+        data: {
+          linesCleared,
+          clearType,
+          wasPlanned,
+          level: this.currentLevel
+        }
+      });
+      
       // NEW: Lower water level when lines are cleared
       // Each cleared line reduces water level by 10% (main defense!)
       const waterReduction = linesCleared * 0.1; // 10% per line cleared
@@ -932,26 +1357,49 @@ export class EnhancedGame extends Scene {
       this.events.emit('lines-cleared', linesCleared);
       this.showBeaverMessage(message);
       
-      // Show story elements at milestones (check if we've reached or passed the milestone)
-      if (newLines >= 5 && state.lines < 5) {
-        this.showMilestoneStory(5);
-      } else if (newLines >= 25 && state.lines < 25) {
-        this.showMilestoneStory(25);
-      }
-      
       // Check if level is completed (target lines reached)
       const currentSeasonalLevel = this.seasonalManager.getCurrentLevel();
       if (currentSeasonalLevel && newLines >= currentSeasonalLevel.targetLines) {
-        console.log(`🎯 Level ${this.currentLevel} completed! Cleared ${newLines} lines (target: ${currentSeasonalLevel.targetLines})`);
+        const completedLevel = currentSeasonalLevel.globalLevel || this.currentLevel;
+        console.log(`🎯 Level ${completedLevel} completed! Cleared ${newLines} lines (target: ${currentSeasonalLevel.targetLines})`);
         this.events.emit('level-completed', {
-          level: this.currentLevel,
+          level: completedLevel,
           lines: newLines,
           score: updatedState.score,
           timeElapsed: Date.now() - this.gameStartTime
         });
+        
+        // TELEMETRY: Record level end (completion)
+        const finalAnalysis = BoardAnalyzer.analyzeBoard(clearedBoard, 20);
+        this.telemetryCollector.recordEvent('level_end', {
+          level: this.currentLevel,
+          waterLevel: this.waterLevelManager.getCurrentLevel(),
+          timeElapsed: Date.now() - this.gameStartTime,
+          stackHeight: finalAnalysis.stackHeight
+        });
+        
+        // Calculate traits for this level
+        this.telemetryCollector.calculateLevelTraits(this.currentLevel, 20);
+        
+        // Save session data on level completion
+        this.telemetryCollector.saveSessionData();
       }
       
       console.log('Water reduced by:', waterReduction, 'Current water level:', this.waterLevelManager.getCurrentLevel());
+    }
+    
+    // TELEMETRY: Board analysis every 10 pieces
+    if (this.piecesPlacedCount % 10 === 0 && this.piecesPlacedCount > this.lastBoardAnalysisPieceCount) {
+      const finalAnalysis = BoardAnalyzer.analyzeBoard(clearedBoard, 20);
+      this.telemetryCollector.recordEvent('stack_height_change', {
+        stackHeight: finalAnalysis.stackHeight,
+        holesCount: finalAnalysis.holesCount,
+        overhangsCount: finalAnalysis.overhangsCount,
+        boardDensity: finalAnalysis.boardDensity,
+        level: this.currentLevel,
+        waterLevel: this.waterLevelManager.getCurrentLevel()
+      });
+      this.lastBoardAnalysisPieceCount = this.piecesPlacedCount;
     }
     
     // Spawn next piece
@@ -1224,6 +1672,40 @@ export class EnhancedGame extends Scene {
   private triggerGameOver(reason: 'water_level' | 'board_full' | 'time_up'): void {
     this.isGameOver = true;
     
+    // TELEMETRY: Record death event
+    const state = this.gameStateManager.getState();
+    const finalAnalysis = state.board ? BoardAnalyzer.analyzeBoard(state.board, 20) : null;
+    
+    this.telemetryCollector.recordEvent('death', {
+      level: this.currentLevel,
+      waterLevel: this.waterLevelManager.getCurrentLevel(),
+      stackHeight: finalAnalysis?.stackHeight,
+      timeElapsed: Date.now() - this.gameStartTime
+    });
+    
+    // TELEMETRY: Record level end (failure)
+    this.telemetryCollector.recordEvent('level_end', {
+      level: this.currentLevel,
+      waterLevel: this.waterLevelManager.getCurrentLevel(),
+      timeElapsed: Date.now() - this.gameStartTime
+    });
+    
+    // Update level summary
+    this.telemetryCollector.updateLevelSummary(this.currentLevel, {
+      timestamp: Date.now(),
+      eventType: 'death',
+      data: {
+        level: this.currentLevel,
+        reason
+      }
+    });
+    
+    // Calculate traits for this level
+    this.telemetryCollector.calculateLevelTraits(this.currentLevel, 20);
+    
+    // Save session data
+    this.telemetryCollector.saveSessionData();
+    
     // Create splash effect at water surface
     if (reason === 'water_level') {
       const waterHeight = this.waterLevelManager.getVisualHeight();
@@ -1296,8 +1778,37 @@ export class EnhancedGame extends Scene {
     }).setOrigin(0.5);
     scoreText.setDepth(201);
     
+    // Submit score button (opens leaderboard screen)
+    const submitButton = this.add.text(width / 2, height / 2 + 130, '🏆 Submit Score', {
+      fontSize: '20px',
+      color: '#F5F7FF',
+      fontFamily: 'Arial Black',
+      stroke: '#000000',
+      strokeThickness: 2
+    }).setOrigin(0.5);
+    submitButton.setDepth(201);
+    submitButton.setInteractive();
+    
+    submitButton.on('pointerdown', () => {
+      const state = this.gameStateManager.getState();
+      this.scene.start('GameOver', {
+        score: state.score,
+        level: this.currentLevel,
+        lines: state.lines,
+        reason: reason
+      });
+    });
+    
+    submitButton.on('pointerover', () => {
+      submitButton.setColor('#FFD700');
+    });
+    
+    submitButton.on('pointerout', () => {
+      submitButton.setColor('#F5F7FF');
+    });
+    
     // Restart button
-    const restartButton = this.add.text(width / 2, height / 2 + 140, '🔄 Try Again', {
+    const restartButton = this.add.text(width / 2, height / 2 + 175, '🔄 Try Again', {
       fontSize: '20px',
       color: '#00FFFF',
       fontFamily: 'Arial Black',
@@ -1360,6 +1871,53 @@ export class EnhancedGame extends Scene {
     // OPTIMIZED: Check game over conditions less frequently
     if (this.frameCount % 10 === 0) {
       this.checkWaterLevelGameOver();
+      
+      // TELEMETRY: Danger detection (check stack height every 10 frames)
+      const state = this.gameStateManager.getState();
+      if (state.board && state.board.length > 0) {
+        const analysis = BoardAnalyzer.analyzeBoard(state.board, 20);
+        const dangerThreshold = 0.7; // 70% of board height
+        
+        // Check for near-death state
+        if (analysis.stackHeight > dangerThreshold && !this.nearDeathState) {
+          this.nearDeathState = true;
+          this.telemetryCollector.recordEvent('near_death', {
+            dangerLevel: analysis.stackHeight,
+            level: this.currentLevel,
+            waterLevel: this.waterLevelManager.getCurrentLevel(),
+            stackHeight: analysis.stackHeight
+          });
+          
+          // Update level summary
+          this.telemetryCollector.updateLevelSummary(this.currentLevel, {
+            timestamp: Date.now(),
+            eventType: 'near_death',
+            data: {
+              dangerLevel: analysis.stackHeight,
+              level: this.currentLevel
+            }
+          });
+        } else if (analysis.stackHeight <= 0.5 && this.nearDeathState) {
+          // Recovery from danger
+          this.nearDeathState = false;
+          this.telemetryCollector.recordEvent('recovery', {
+            level: this.currentLevel,
+            waterLevel: this.waterLevelManager.getCurrentLevel(),
+            stackHeight: analysis.stackHeight
+          });
+          
+          // Update level summary
+          this.telemetryCollector.updateLevelSummary(this.currentLevel, {
+            timestamp: Date.now(),
+            eventType: 'recovery',
+            data: {
+              level: this.currentLevel
+            }
+          });
+        }
+        
+        this.lastStackHeight = analysis.stackHeight;
+      }
     }
     
     // Update timer
@@ -1384,8 +1942,8 @@ export class EnhancedGame extends Scene {
     // OPTIMIZED: Simple, efficient timing system
     this.dropCounter += delta;
     
-    // Calculate drop interval based on level (simplified)
-    const levelDropInterval = Math.max(200, this.dropInterval - (state.level * 50));
+    // Calculate drop interval based on level (faster ramp: -80ms per level)
+    const levelDropInterval = Math.max(200, this.dropInterval - (state.level * 80));
     
     if (this.dropCounter >= levelDropInterval) {
       this.dropCounter = 0;
@@ -1872,15 +2430,62 @@ export class EnhancedGame extends Scene {
   private updateGameUI(state: any): void {
     // Format numbers with leading zeros like in the reference
     const formattedScore = state.score.toString().padStart(6, '0');
-    const formattedLevel = state.level.toString().padStart(2, '0');
+    const displayedLevel = this.gameMode === 'campaign'
+      ? this.currentLevel
+      : (state.level || this.currentLevel);
+    const formattedLevel = displayedLevel.toString().padStart(2, '0');
     const formattedLines = state.lines.toString().padStart(3, '0');
     
-    this.scoreText.setText(`SCORE: ${formattedScore}`);
-    this.levelText.setText(`LEVEL: ${formattedLevel}`);
-    this.linesText.setText(`LINES: ${formattedLines}`);
+    if (state.score !== this.scoreTarget) {
+      this.scoreTarget = state.score;
+      if (this.scoreTween) {
+        this.scoreTween.stop();
+      }
+      
+      const startValue = this.displayedScore;
+      const endValue = this.scoreTarget;
+      this.scoreText.setColor('#FFD700');
+      this.time.delayedCall(160, () => {
+        this.scoreText.setColor('#EAF6FF');
+      });
+      
+      this.scoreTween = this.tweens.addCounter({
+        from: startValue,
+        to: endValue,
+        duration: 280,
+        ease: 'Sine.easeOut',
+        onUpdate: (tween) => {
+          const value = Math.round(tween.getValue());
+          this.displayedScore = value;
+          const animScore = value.toString().padStart(6, '0');
+          this.scoreText.setText(animScore);
+        },
+        onComplete: () => {
+          this.displayedScore = endValue;
+          this.scoreText.setText(formattedScore);
+          this.scoreTween = null;
+        }
+      });
+    } else if (!this.scoreTween && this.displayedScore !== this.scoreTarget) {
+      // Safety: sync display if a tween isn't running but values are out of sync
+      this.displayedScore = this.scoreTarget;
+      this.scoreText.setText(formattedScore);
+    } else {
+      this.scoreText.setText(formattedScore);
+    }
+    
+    this.levelText.setText(formattedLevel);
+    this.linesText.setText(formattedLines);
   }
 
   private updateSeasonalUI(envState: EnvironmentalState): void {
+    if (!this.showEnvironmentalText) {
+      if (this.seasonText) {
+        this.seasonText.setVisible(false);
+      }
+      return;
+    }
+
     const seasonNames = {
       spring: 'Spring 🌸',
       summer: 'Summer ☀️',
@@ -1902,6 +2507,13 @@ export class EnhancedGame extends Scene {
   }
 
   private updateWaterLevelUI(level: number): void {
+    if (!this.showEnvironmentalText) {
+      if (this.waterLevelText) {
+        this.waterLevelText.setVisible(false);
+      }
+      return;
+    }
+
     const percentage = Math.round(level * 100);
     this.waterLevelText.setText(`Water: ${percentage}%`);
     
@@ -2050,8 +2662,16 @@ export class EnhancedGame extends Scene {
     
     completionContainer.add(signContainer);
     
+    const currentSeasonalLevel = this.seasonalManager.getCurrentLevel();
+    const completionLevel = data?.level || currentSeasonalLevel?.globalLevel || this.currentLevel;
+    const isFinalCampaignLevel = this.gameMode === 'campaign' && completionLevel >= 20;
+    const completionBeat = this.getCampaignCompletionBeat(completionLevel, isFinalCampaignLevel);
+    const completionTitle = isFinalCampaignLevel
+      ? 'THE DAM IS SAFE'
+      : `LEVEL ${completionLevel} COMPLETE`;
+
     // Engraved title text (carved/inset effect) - positioned on the smaller sign
-    const titleShadow = this.add.text(0, -halfHeight + 50, 'LEVEL COMPLETE', {
+    const titleShadow = this.add.text(0, -halfHeight + 74, completionTitle, {
       fontSize: isMobile ? '24px' : '32px',
       color: '#2E2419',
       fontFamily: 'Arial Black',
@@ -2060,7 +2680,7 @@ export class EnhancedGame extends Scene {
     titleShadow.setPosition(titleShadow.x + 2, titleShadow.y + 2);
     completionContainer.add(titleShadow);
     
-    const titleText = this.add.text(0, -halfHeight + 50, 'LEVEL COMPLETE', {
+    const titleText = this.add.text(0, -halfHeight + 64, completionTitle, {
       fontSize: isMobile ? '24px' : '32px',
       color: '#DAA520', // Golden engraved text
       fontFamily: 'Arial Black',
@@ -2070,11 +2690,22 @@ export class EnhancedGame extends Scene {
     }).setOrigin(0.5);
     completionContainer.add(titleText);
     
-    // Stars display (properly spaced, no overlap) - positioned on the smaller sign
-    const starY = -halfHeight + 90;
+    const subtitleText = this.add.text(0, -halfHeight + (isMobile ? 98 : 110), completionBeat.title, {
+      fontSize: isMobile ? '18px' : '24px',
+      color: '#DDF1B8',
+      fontFamily: '"Trebuchet MS", "Verdana", sans-serif',
+      fontStyle: 'bold',
+      align: 'center',
+      wordWrap: { width: signWidth - 100 }
+    }).setOrigin(0.5);
+    completionContainer.add(subtitleText);
+
+    // Stars display (properly spaced, no overlap) - centered between subtitle and story panel
+    const starY = -halfHeight + (isMobile ? 110 : 132);
     const starSize = isMobile ? '28px' : '36px';
     const starSpacing = isMobile ? 45 : 60;
     const starsEarned = data.stars || 1;
+    const animatedStars: Phaser.GameObjects.Text[] = [];
     
     for (let i = 0; i < 3; i++) {
       const starX = -starSpacing + (i * starSpacing);
@@ -2097,15 +2728,98 @@ export class EnhancedGame extends Scene {
         fontFamily: 'Arial',
         align: 'center'
       }).setOrigin(0.5);
+      star.setScale(i < starsEarned ? 0.2 : 1);
+      star.setAlpha(i < starsEarned ? 0.3 : 1);
       completionContainer.add(star);
+      animatedStars.push(star);
     }
     
+    const summaryCardY = starY + (isMobile ? 24 : 26);
+    const summaryCardWidth = signWidth - (isMobile ? 60 : 90);
+    const summaryPaddingTop = isMobile ? 20 : 22;
+    const summaryPaddingBottom = isMobile ? 18 : 20;
+    const summaryBlockGap = isMobile ? 12 : 14;
+    const summaryText = this.add.text(0, 0, completionBeat.summary, {
+      fontSize: isMobile ? '13px' : '16px',
+      color: '#FFF6E4',
+      fontFamily: '"Trebuchet MS", "Verdana", sans-serif',
+      align: 'center',
+      wordWrap: { width: summaryCardWidth - 34 },
+      lineSpacing: 3
+    }).setOrigin(0.5);
+
+    const celebrationText = this.add.text(0, 0, completionBeat.celebration, {
+      fontSize: isMobile ? '12px' : '14px',
+      color: '#F6D99A',
+      fontFamily: '"Trebuchet MS", "Verdana", sans-serif',
+      fontStyle: 'italic',
+      align: 'center',
+      wordWrap: { width: summaryCardWidth - 40 },
+      lineSpacing: 2
+    }).setOrigin(0.5);
+
+    const nextHintText = this.add.text(0, 0, completionBeat.nextHint, {
+      fontSize: isMobile ? '12px' : '14px',
+      color: '#CFEED8',
+      fontFamily: '"Trebuchet MS", "Verdana", sans-serif',
+      fontStyle: 'bold',
+      align: 'center',
+      wordWrap: { width: summaryCardWidth - 40 }
+    }).setOrigin(0.5);
+
+    const summaryTextHeight = summaryText.height;
+    const celebrationTextHeight = celebrationText.height;
+    const nextHintHeight = nextHintText.height;
+    const summaryCardHeight =
+      summaryPaddingTop +
+      summaryTextHeight +
+      summaryBlockGap +
+      celebrationTextHeight +
+      summaryBlockGap +
+      nextHintHeight +
+      summaryPaddingBottom;
+
+    const summaryCard = this.add.graphics();
+    summaryCard.fillStyle(0x16253b, 0.78);
+    summaryCard.lineStyle(2, 0x84d3d8, 0.48);
+    summaryCard.fillRoundedRect(-summaryCardWidth / 2, summaryCardY, summaryCardWidth, summaryCardHeight, 16);
+    summaryCard.strokeRoundedRect(-summaryCardWidth / 2, summaryCardY, summaryCardWidth, summaryCardHeight, 16);
+    completionContainer.add(summaryCard);
+
+    let textCursorY = summaryCardY + summaryPaddingTop;
+    summaryText.setY(textCursorY + summaryTextHeight / 2);
+    completionContainer.add(summaryText);
+
+    textCursorY += summaryTextHeight + summaryBlockGap;
+    celebrationText.setY(textCursorY + celebrationTextHeight / 2);
+    completionContainer.add(celebrationText);
+
+    textCursorY += celebrationTextHeight + summaryBlockGap;
+    nextHintText.setY(textCursorY + nextHintHeight / 2);
+    completionContainer.add(nextHintText);
+
+    animatedStars.forEach((star, index) => {
+      if (index >= starsEarned) {
+        return;
+      }
+
+      this.tweens.add({
+        targets: star,
+        scaleX: 1,
+        scaleY: 1,
+        alpha: 1,
+        duration: 220,
+        delay: 180 + index * 140,
+        ease: 'Back.easeOut'
+      });
+    });
+
     // Stats section with engraved style - positioned on the smaller sign
-    const statsY = -halfHeight + 140;
-    const statSpacing = isMobile ? 25 : 30;
+    const statsY = halfHeight - (isMobile ? 34 : 40);
+    const statColumnOffset = isMobile ? 88 : 108;
     
     // Score
-    const scoreShadow = this.add.text(0, statsY, `SCORE: ${data.score.toLocaleString()}`, {
+    const scoreShadow = this.add.text(-statColumnOffset, statsY, `SCORE\n${data.score.toLocaleString()}`, {
       fontSize: isMobile ? '14px' : '18px',
       color: '#2E2419',
       fontFamily: 'Arial Black',
@@ -2114,7 +2828,7 @@ export class EnhancedGame extends Scene {
     scoreShadow.setPosition(scoreShadow.x + 1, scoreShadow.y + 1);
     completionContainer.add(scoreShadow);
     
-    const scoreText = this.add.text(0, statsY, `SCORE: ${data.score.toLocaleString()}`, {
+    const scoreText = this.add.text(-statColumnOffset, statsY, `SCORE\n${data.score.toLocaleString()}`, {
       fontSize: isMobile ? '14px' : '18px',
       color: '#F5DEB3', // Light wood text
       fontFamily: 'Arial Black',
@@ -2124,7 +2838,7 @@ export class EnhancedGame extends Scene {
     
     // Time
     const timeSeconds = Math.round(data.timeElapsed / 1000);
-    const timeShadow = this.add.text(0, statsY + statSpacing, `TIME: ${timeSeconds}s`, {
+    const timeShadow = this.add.text(0, statsY, `TIME\n${timeSeconds}s`, {
       fontSize: isMobile ? '14px' : '18px',
       color: '#2E2419',
       fontFamily: 'Arial Black',
@@ -2133,13 +2847,30 @@ export class EnhancedGame extends Scene {
     timeShadow.setPosition(timeShadow.x + 1, timeShadow.y + 1);
     completionContainer.add(timeShadow);
     
-    const timeText = this.add.text(0, statsY + statSpacing, `TIME: ${timeSeconds}s`, {
+    const timeText = this.add.text(0, statsY, `TIME\n${timeSeconds}s`, {
       fontSize: isMobile ? '14px' : '18px',
       color: '#F5DEB3',
       fontFamily: 'Arial Black',
       align: 'center'
     }).setOrigin(0.5);
     completionContainer.add(timeText);
+
+    const starsShadow = this.add.text(statColumnOffset, statsY, `STARS\n${starsEarned}/3`, {
+      fontSize: isMobile ? '14px' : '18px',
+      color: '#2E2419',
+      fontFamily: 'Arial Black',
+      align: 'center'
+    }).setOrigin(0.5);
+    starsShadow.setPosition(starsShadow.x + 1, starsShadow.y + 1);
+    completionContainer.add(starsShadow);
+
+    const starsText = this.add.text(statColumnOffset, statsY, `STARS\n${starsEarned}/3`, {
+      fontSize: isMobile ? '14px' : '18px',
+      color: '#F5DEB3',
+      fontFamily: 'Arial Black',
+      align: 'center'
+    }).setOrigin(0.5);
+    completionContainer.add(starsText);
     
     // Wooden Continue button - positioned on the smaller sign
     const buttonY = isMobile ? 0 : 10; // we'll center content vertically; button sits near center-bottom
@@ -2151,53 +2882,56 @@ export class EnhancedGame extends Scene {
     const buttonBg = this.add.graphics();
     const buttonRadius = 12;
     
-    // Button shadow
-    buttonBg.fillStyle(0x000000, 0.3);
-    buttonBg.fillRoundedRect(-buttonWidth/2 + 3, -buttonHeight/2 + 3, buttonWidth, buttonHeight, buttonRadius);
-    
-    // Button base (lighter wood)
-    buttonBg.fillStyle(0xDEB887, 0.95);
-    buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, buttonRadius);
-    
-    // Button wood grain
-    buttonBg.lineStyle(1, 0xBC9A6A, 0.3);
-    for (let i = 1; i < 3; i++) {
-      const lineY = -buttonHeight/2 + (buttonHeight / 3) * i;
-      buttonBg.moveTo(-buttonWidth/2 + 5, lineY);
-      buttonBg.lineTo(buttonWidth/2 - 5, lineY);
-    }
-    buttonBg.strokePath();
-    
-    // Button highlight
-    buttonBg.fillStyle(0xF5DEB3, 0.8);
-    buttonBg.fillRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, 4);
-    buttonBg.fillRect(-buttonWidth/2, -buttonHeight/2, 4, buttonHeight);
-    
-    // Button shadow
-    buttonBg.fillStyle(0xBC9A6A, 0.7);
-    buttonBg.fillRect(buttonWidth/2 - 4, -buttonHeight/2 + 2, 4, buttonHeight - 2);
-    buttonBg.fillRect(-buttonWidth/2 + 2, buttonHeight/2 - 4, buttonWidth - 2, 4);
-    
-    // Cyan border
-    buttonBg.lineStyle(3, cyanAccent, 0.9);
-    buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, buttonRadius);
+    const drawCompletionButton = (hovered: boolean) => {
+      const topColor = hovered ? 0xF7D0DF : 0xEEC2D2;
+      const bottomColor = hovered ? 0xDFA4B8 : 0xCC8FA6;
+      const borderColor = hovered ? 0xFFF2F7 : 0xF8DCE7;
+      const grainColor = hovered ? 0xC28A7D : 0xB97E72;
+
+      buttonBg.clear();
+
+      // Button shadow
+      buttonBg.fillStyle(0x000000, 0.26);
+      buttonBg.fillRoundedRect(-buttonWidth/2 + 4, -buttonHeight/2 + 4, buttonWidth, buttonHeight, buttonRadius);
+
+      // Cherry blossom wood body
+      buttonBg.fillGradientStyle(topColor, topColor, bottomColor, bottomColor, 0.98);
+      buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, buttonRadius);
+
+      // Wood grain / petal streaks
+      buttonBg.lineStyle(1, grainColor, 0.28);
+      for (let i = 1; i < 4; i++) {
+        const lineY = -buttonHeight/2 + (buttonHeight / 4) * i;
+        buttonBg.moveTo(-buttonWidth/2 + 10, lineY);
+        buttonBg.lineTo(buttonWidth/2 - 10, lineY + (i % 2 === 0 ? 1 : -1));
+      }
+      buttonBg.strokePath();
+
+      // Soft highlights
+      buttonBg.fillStyle(0xFFF5F8, 0.7);
+      buttonBg.fillRect(-buttonWidth/2 + 2, -buttonHeight/2 + 2, buttonWidth - 4, 4);
+      buttonBg.fillRect(-buttonWidth/2 + 2, -buttonHeight/2 + 2, 4, buttonHeight - 4);
+
+      // Lower shadow
+      buttonBg.fillStyle(0xB8798E, 0.45);
+      buttonBg.fillRect(buttonWidth/2 - 5, -buttonHeight/2 + 5, 3, buttonHeight - 10);
+      buttonBg.fillRect(-buttonWidth/2 + 5, buttonHeight/2 - 5, buttonWidth - 10, 3);
+
+      // Border
+      buttonBg.lineStyle(3, borderColor, hovered ? 1 : 0.92);
+      buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, buttonRadius);
+    };
+
+    drawCompletionButton(false);
     
     buttonContainer.add(buttonBg);
     
-    // Button text with shadow
-    const buttonTextShadow = this.add.text(0, 0, 'CONTINUE', {
+    const buttonLabel = completionBeat.buttonLabel;
+    const buttonText = this.add.text(0, 0, buttonLabel, {
       fontSize: isMobile ? '18px' : '22px',
-      color: '#000000',
-      fontFamily: 'Arial Black',
-      align: 'center'
-    }).setOrigin(0.5);
-    buttonTextShadow.setPosition(buttonTextShadow.x + 1, buttonTextShadow.y + 1);
-    buttonContainer.add(buttonTextShadow);
-    
-    const buttonText = this.add.text(0, 0, 'CONTINUE', {
-      fontSize: isMobile ? '18px' : '22px',
-      color: '#2E2419',
-      fontFamily: 'Arial Black',
+      color: '#4D2332',
+      fontFamily: '"Trebuchet MS", "Verdana", sans-serif',
+      fontStyle: 'bold',
       align: 'center'
     }).setOrigin(0.5);
     buttonContainer.add(buttonText);
@@ -2208,16 +2942,8 @@ export class EnhancedGame extends Scene {
     const titleY = -halfHeight + contentTopPadding + (isMobile ? 20 : 24);
     titleShadow.setY(titleY);
     titleText.setY(titleY);
-    const starsY = titleY + (isMobile ? 32 : 40);
-    // Update existing stars group Y
-    // (stars are created at starY variable, so we adjust it here)
-    // No-op: starY already uses computed from halfHeight but we'll leave as is for readability
-    const statsBaseY = starsY + (isMobile ? 34 : 44);
-    scoreShadow.setY(statsBaseY);
-    scoreText.setY(statsBaseY);
-    timeShadow.setY(statsBaseY + (isMobile ? 24 : 28));
-    timeText.setY(statsBaseY + (isMobile ? 24 : 28));
-    buttonContainer.setY(timeText.y + (isMobile ? 38 : 44));
+    subtitleText.setY(titleY + (isMobile ? 34 : 42));
+    buttonContainer.setY(halfHeight + (isMobile ? 28 : 32));
 
     // Add entrance animation for polish
     completionContainer.setAlpha(0);
@@ -2246,34 +2972,7 @@ export class EnhancedGame extends Scene {
     
     // Helper function to redraw button
     const redrawButton = (hovered: boolean) => {
-      buttonBg.clear();
-      const baseColor = hovered ? 0xE6C799 : 0xDEB887;
-      const borderColor = hovered ? 0x7FE7FF : cyanAccent;
-      
-      // Button shadow
-      buttonBg.fillStyle(0x000000, 0.3);
-      buttonBg.fillRoundedRect(-buttonWidth/2 + 3, -buttonHeight/2 + 3, buttonWidth, buttonHeight, buttonRadius);
-      
-      // Button base
-      buttonBg.fillStyle(baseColor, 0.95);
-      buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, buttonRadius);
-      
-      // Wood grain, highlights, shadows, border
-      buttonBg.lineStyle(1, 0xBC9A6A, 0.3);
-      for (let i = 1; i < 3; i++) {
-        const lineY = -buttonHeight/2 + (buttonHeight / 3) * i;
-        buttonBg.moveTo(-buttonWidth/2 + 5, lineY);
-        buttonBg.lineTo(buttonWidth/2 - 5, lineY);
-      }
-      buttonBg.strokePath();
-      buttonBg.fillStyle(0xF5DEB3, 0.8);
-      buttonBg.fillRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, 4);
-      buttonBg.fillRect(-buttonWidth/2, -buttonHeight/2, 4, buttonHeight);
-      buttonBg.fillStyle(0xBC9A6A, 0.7);
-      buttonBg.fillRect(buttonWidth/2 - 4, -buttonHeight/2 + 2, 4, buttonHeight - 2);
-      buttonBg.fillRect(-buttonWidth/2 + 2, buttonHeight/2 - 4, buttonWidth - 2, 4);
-      buttonBg.lineStyle(3, borderColor, hovered ? 1.0 : 0.9);
-      buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, buttonRadius);
+      drawCompletionButton(hovered);
     };
     
     // Remove scale-based hover to avoid hit-area mismatch
@@ -2284,33 +2983,60 @@ export class EnhancedGame extends Scene {
     buttonContainer.on('pointerout', () => {
       redrawButton(false);
     });
-    
-    buttonContainer.once('pointerdown', () => {
-      // Single-click activation; proceed to next level intro
-      buttonContainer.disableInteractive();
-      const nextLevel = this.currentLevel + 1;
-      completionContainer.destroy();
-      // Remove background overlay if any before intro
-      if (this.overlayBackground) { this.overlayBackground.destroy(true); this.overlayBackground = null; }
-      this.isShowingLevelComplete = false;
-      this.showLevelIntro(nextLevel);
-    });
 
-    // Add beaver image below the button (prominent and centered)
-    const beaverMaxWidth = isMobile ? 200 : 260; // keep current visual size
-    const beaverMargin = isMobile ? 24 : 28; // top edge gap below button
-    // Create beaver now (centered x), we'll position after we know its scaled height
+    // Shared handler so both the button and background clicks can advance quickly
+    const goToNextLevel = () => {
+      // Prevent multiple activations
+      if (!this.isShowingLevelComplete) {
+        return;
+      }
+      
+      this.isShowingLevelComplete = false;
+      buttonContainer.disableInteractive();
+      
+      completionContainer.destroy();
+      
+      // Remove background overlay if any before intro
+      if (this.overlayBackground) {
+        this.overlayBackground.destroy(true);
+        this.overlayBackground = null;
+      }
+      
+      if (isFinalCampaignLevel) {
+        this.isPaused = false;
+        this.isShowingLevelIntro = false;
+        this.scene.start('LevelSelect');
+      } else {
+        const nextLevel = this.currentLevel + 1;
+        this.currentLevel = nextLevel;
+        this.syncCurrentLevelState();
+        this.updateGameUI(this.gameStateManager.getState());
+        this.showLevelIntro(nextLevel);
+      }
+    };
+    
+    // Primary click target: the Continue button
+    buttonContainer.once('pointerdown', goToNextLevel);
+    
+    // Also allow clicking anywhere on the completion overlay background
+    blocker.on('pointerdown', goToNextLevel);
+
+    // Add beaver as a decorative corner accent so it never overlaps the story text
+    const beaverMaxWidth = isMobile ? 180 : 226;
     const beaver = this.addBeaverCharacter(completionContainer, 0, 0, beaverMaxWidth);
-    const beaverHeight = beaver.displayHeight; // scaled height
-    const beaverBottomY = buttonContainer.y + (buttonHeight / 2) + beaverMargin + beaverHeight;
-    // Clamp to stay inside sign bounds (bottom padding 8px)
-    beaver.y = Math.min(halfHeight - 8, beaverBottomY);
+    const beaverInsetX = isMobile ? 18 : 24;
+    const beaverOverlapY = isMobile ? 14 : 18;
+    beaver.x = halfWidth - beaverInsetX;
+    beaver.y = halfHeight + beaverOverlapY;
     beaver.setDepth(1);
+    beaver.setRotation(-0.04);
+    beaver.setScale(beaver.scaleX * 0.98, beaver.scaleY * 0.98);
     // Subtle idle animation AFTER final position is set
     const bob = (isMobile ? 1 : 1.5);
     this.tweens.add({
       targets: beaver,
       y: beaver.y - bob,
+      rotation: -0.055,
       duration: 2000,
       yoyo: true,
       repeat: -1,
@@ -2448,88 +3174,317 @@ export class EnhancedGame extends Scene {
   private showLevelIntro(levelNumber: number): void {
     const { width, height } = this.scale;
     const isMobile = width < 600;
+    const storyBeat = this.getCampaignStoryBeat(levelNumber);
+    console.log('intro-modal-v2', { levelNumber, isMobile });
     this.isPaused = true;
     this.isShowingLevelIntro = true;
-    const container = this.add.container(width / 2, height / 2);
-    container.setDepth(350);
-    
+    const root = this.add.container(width / 2, height / 2);
+    root.setDepth(350);
+
+    const layout = this.measureIntroModalLayout(storyBeat, width, height, isMobile, levelNumber);
+
     // Soft background overlay
     const bg = this.add.graphics();
     bg.fillStyle(0x000000, 0.6);
     bg.fillRect(-width / 2, -height / 2, width, height);
-    container.add(bg);
-    
-    // Consume background clicks to avoid closing everything with no action
+    root.add(bg);
+
+    // Block clicks to the game; panel is added after so the button stays on top
     const clickBlocker = this.add.rectangle(0, 0, width, height, 0x000000, 0);
     clickBlocker.setInteractive();
-    container.add(clickBlocker);
-    
-    // Reuse wooden sign look in a lighter, smaller intro variant
-    const signW = isMobile ? width - 80 : 560;
-    const signH = isMobile ? 320 : 360;
+    root.add(clickBlocker);
+
+    const panel = this.add.container(0, 0);
+    panel.setScale(layout.modalScale);
+
+    if (levelNumber === 1 && this.textures.exists('chapter1Signage')) {
+      const art = this.add.image(0, 0, 'chapter1Signage').setOrigin(0.5);
+      const s = Math.min(layout.signWidth / art.width, layout.signHeight / art.height);
+      art.setScale(s);
+      art.setAlpha(0.42);
+      panel.add(art);
+    }
+
     const sign = this.add.graphics();
-    sign.fillStyle(0x4A3728, 0.95);
-    sign.fillRoundedRect(-signW/2, -signH/2, signW, signH, 14);
+    sign.fillGradientStyle(0x4A3728, 0x4A3728, 0x73543b, 0x73543b, 0.97);
+    sign.fillRoundedRect(-layout.signWidth / 2, -layout.signHeight / 2, layout.signWidth, layout.signHeight, 14);
     sign.lineStyle(2, 0x8B4513, 1);
-    sign.strokeRoundedRect(-signW/2, -signH/2, signW, signH, 14);
-    container.add(sign);
-    
-    const title = this.add.text(0, -signH/2 + (isMobile ? 36 : 42), `LEVEL ${levelNumber}`, {
-      fontSize: isMobile ? '28px' : '36px',
-      fontFamily: 'Arial Black',
-      color: '#DAA520',
+    sign.strokeRoundedRect(-layout.signWidth / 2, -layout.signHeight / 2, layout.signWidth, layout.signHeight, 14);
+    panel.add(sign);
+
+    const chapter = this.add.text(0, layout.chapterY, storyBeat.chapterTitle, {
+      fontSize: isMobile ? '16px' : '18px',
+      fontFamily: '"Trebuchet MS", "Verdana", sans-serif',
+      color: '#F7D9A0',
+      align: 'center'
+    }).setOrigin(0.5);
+    panel.add(chapter);
+
+    const title = this.add.text(0, layout.titleY, `LEVEL ${levelNumber} · ${storyBeat.levelLabel}`, {
+      fontSize: isMobile ? '22px' : '28px',
+      fontFamily: '"Trebuchet MS", "Verdana", sans-serif',
+      fontStyle: 'bold',
+      color: '#FFE7A8',
       stroke: '#000000',
       strokeThickness: 2,
       align: 'center'
     }).setOrigin(0.5);
-    container.add(title);
-    
-    const story = this.add.text(0, -20, 'Fresh currents ahead! The water rises faster—\nstack smart and keep the dam strong.', {
-      fontSize: isMobile ? '14px' : '16px',
-      fontFamily: 'Arial',
-      color: '#F5DEB3',
-      align: 'center'
-    }).setOrigin(0.5);
-    container.add(story);
-    
-    // Start button
-    const btnW = isMobile ? 160 : 200;
-    const btnH = isMobile ? 40 : 46;
-    const startBtn = this.add.container(0, signH/2 - (isMobile ? 48 : 56));
-    const g = this.add.graphics();
-    g.fillStyle(0xDEB887, 0.95);
-    g.fillRoundedRect(-btnW/2, -btnH/2, btnW, btnH, 10);
-    g.lineStyle(3, 0x66D9EF, 1);
-    g.strokeRoundedRect(-btnW/2, -btnH/2, btnW, btnH, 10);
-    const label = this.add.text(0, 0, 'START', {
+    panel.add(title);
+
+    const subtitle = this.add.text(0, layout.subtitleY, storyBeat.title, {
       fontSize: isMobile ? '18px' : '22px',
-      fontFamily: 'Arial Black',
-      color: '#2E2419'
+      fontFamily: '"Trebuchet MS", "Verdana", sans-serif',
+      fontStyle: 'bold',
+      color: '#BFE8B4',
+      align: 'center',
+      wordWrap: { width: layout.signWidth - 70 }
     }).setOrigin(0.5);
-    startBtn.add([g, label]);
-    startBtn.setSize(btnW, btnH);
-    startBtn.setInteractive(new Phaser.Geom.Rectangle(-btnW/2, -btnH/2, btnW, btnH), Phaser.Geom.Rectangle.Contains);
-    container.add(startBtn);
-    
-    startBtn.once('pointerdown', () => {
-      startBtn.disableInteractive();
-      // Remove leftover background overlay (safety)
-      if (this.overlayBackground) { this.overlayBackground.destroy(true); this.overlayBackground = null; }
+    panel.add(subtitle);
+
+    const storyCard = this.add.graphics();
+    storyCard.fillStyle(0x1f2f1e, 0.45);
+    storyCard.lineStyle(2, 0xcfe9c7, 0.55);
+    storyCard.fillRoundedRect(-layout.signWidth / 2 + 30, layout.storyCardY, layout.signWidth - 60, layout.storyCardHeight, 12);
+    storyCard.strokeRoundedRect(-layout.signWidth / 2 + 30, layout.storyCardY, layout.signWidth - 60, layout.storyCardHeight, 12);
+    panel.add(storyCard);
+
+    const story = this.add.text(
+      0,
+      layout.storyCardY + layout.storyCardHeight / 2,
+      storyBeat.text,
+      layout.storyTextStyle
+    ).setOrigin(0.5);
+    panel.add(story);
+
+    const startButton = this.createIntroCtaButton(0, layout.buttonY, storyBeat.buttonLabel, isMobile);
+    panel.add(startButton.container);
+
+    root.add(panel);
+
+    let introAccepted = false;
+    let handleIntroContinue: () => void;
+    const onKey = (ev: KeyboardEvent): void => {
+      if (introAccepted) {
+        return;
+      }
+      if (ev.code !== 'Space' && ev.code !== 'Enter') {
+        return;
+      }
+      ev.preventDefault();
+      handleIntroContinue();
+    };
+    this.input.keyboard?.on('keydown', onKey);
+
+    handleIntroContinue = (): void => {
+      if (introAccepted) {
+        return;
+      }
+      introAccepted = true;
+      this.input.keyboard?.off('keydown', onKey);
+
+      startButton.setPressedState();
+      startButton.hitTarget.disableInteractive();
+      if (this.overlayBackground) {
+        this.overlayBackground.destroy(true);
+        this.overlayBackground = null;
+      }
       const started = this.levelProgressionManager?.startLevel(levelNumber);
       if (started) {
         this.currentLevel = levelNumber;
-        container.destroy();
+        this.syncCurrentLevelState();
+        this.updateGameUI(this.gameStateManager.getState());
+        root.destroy(true);
         this.isPaused = false;
         this.isShowingLevelIntro = false;
         this.resumeGameplay();
       } else {
-        // Fallback to explicit scene start
-        container.destroy();
+        root.destroy(true);
         this.isPaused = false;
         this.isShowingLevelIntro = false;
         this.scene.start('EnhancedGame', { level: levelNumber, mode: 'campaign' });
       }
+    };
+
+    const hit = startButton.hitTarget;
+    hit.on('pointerover', () => {
+      if (!introAccepted) {
+        startButton.setHoverState();
+      }
     });
+    hit.on('pointerout', () => {
+      if (!introAccepted) {
+        startButton.setIdleState();
+      }
+    });
+    hit.on('pointerdown', () => {
+      if (!introAccepted) {
+        startButton.setPressedState();
+      }
+    });
+    hit.once('pointerdown', (
+      _pointer: Phaser.Input.Pointer,
+      _localX: number,
+      _localY: number,
+      event: Phaser.Types.Input.EventData
+    ) => {
+      event.stopPropagation();
+      handleIntroContinue();
+    });
+  }
+
+  private measureIntroModalLayout(
+    storyBeat: CampaignStoryBeat,
+    viewportWidth: number,
+    viewportHeight: number,
+    isMobile: boolean,
+    levelNumber: number
+  ): IntroModalLayout {
+    const signWidth = isMobile ? viewportWidth - 80 : 560;
+    const storyTextStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontSize: isMobile ? '15px' : '18px',
+      fontFamily: '"Trebuchet MS", "Verdana", sans-serif',
+      color: '#FFF8E7',
+      align: 'center',
+      wordWrap: { width: signWidth - 90 },
+      lineSpacing: 4
+    };
+    const storyMeasure = this.add.text(0, 0, storyBeat.text, storyTextStyle).setOrigin(0.5);
+    storyMeasure.setVisible(false);
+
+    const subtitleMeasure = this.add.text(0, 0, storyBeat.title, {
+      fontSize: isMobile ? '18px' : '22px',
+      fontFamily: '"Trebuchet MS", "Verdana", sans-serif',
+      fontStyle: 'bold',
+      color: '#BFE8B4',
+      align: 'center',
+      wordWrap: { width: signWidth - 70 }
+    }).setOrigin(0.5);
+    subtitleMeasure.setVisible(false);
+    const subtitleHeight = Math.ceil(subtitleMeasure.height);
+    subtitleMeasure.destroy();
+
+    const chapterFontHeight = isMobile ? 18 : 22;
+    const titleFontHeight = isMobile ? 30 : 38;
+    const buttonHeight = isMobile ? 48 : 56;
+    const topPadding = isMobile ? 28 : 34;
+    const chapterToTitleGap = isMobile ? 24 : 26;
+    const titleToSubtitleGap = isMobile ? 26 : 30;
+    const subtitleToCardGap = isMobile ? 24 : 28;
+    const storyCardPadding = isMobile ? 16 : 20;
+    const cardToButtonGap = isMobile ? 22 : 24;
+    const buttonBottomPadding = isMobile ? 24 : 28;
+    const storyTextHeight = Math.ceil(storyMeasure.height);
+    const storyCardHeight = Math.max(isMobile ? 104 : 120, storyTextHeight + storyCardPadding * 2);
+
+    const signHeight =
+      topPadding +
+      chapterFontHeight +
+      chapterToTitleGap +
+      titleFontHeight +
+      titleToSubtitleGap +
+      subtitleHeight +
+      subtitleToCardGap +
+      storyCardHeight +
+      cardToButtonGap +
+      buttonHeight +
+      buttonBottomPadding;
+
+    const maxModalHeight = viewportHeight * 0.9;
+    const modalScale = Math.max(0.52, Math.min(1, maxModalHeight / signHeight));
+
+    const signTop = -signHeight / 2;
+    const chapterY = signTop + topPadding + chapterFontHeight / 2;
+    const titleY = chapterY + chapterFontHeight / 2 + chapterToTitleGap + titleFontHeight / 2;
+    const subtitleY = titleY + titleFontHeight / 2 + titleToSubtitleGap + subtitleHeight / 2;
+    const storyCardY = subtitleY + subtitleHeight / 2 + subtitleToCardGap;
+    const buttonY = storyCardY + storyCardHeight + cardToButtonGap + buttonHeight / 2;
+
+    console.log('intro-modal-v2-layout', {
+      levelNumber,
+      signHeight,
+      storyTextHeight,
+      storyCardHeight,
+      subtitleHeight,
+      buttonY,
+      modalScale
+    });
+
+    storyMeasure.destroy();
+
+    return {
+      signWidth,
+      signHeight,
+      chapterY,
+      titleY,
+      subtitleY,
+      storyCardY,
+      storyCardHeight,
+      buttonY,
+      modalScale,
+      storyTextStyle
+    };
+  }
+
+  /**
+   * Campaign intro CTA: warm parchment fill + cyan accent ring (matches reference art).
+   * Uses a topmost transparent Rectangle for hit testing — Container.setInteractive + scaled
+   * parents often misalign hit areas (clicks only registering on one side).
+   */
+  private createIntroCtaButton(x: number, y: number, label: string, isMobile: boolean): {
+    container: Phaser.GameObjects.Container;
+    hitTarget: Phaser.GameObjects.Rectangle;
+    setIdleState: () => void;
+    setHoverState: () => void;
+    setPressedState: () => void;
+  } {
+    const buttonWidth = isMobile ? 200 : 248;
+    const buttonHeight = isMobile ? 48 : 56;
+    const container = this.add.container(x, y);
+    const shadow = this.add.graphics();
+    const background = this.add.graphics();
+    const text = this.add.text(0, 0, label, {
+      fontSize: isMobile ? '18px' : '22px',
+      fontFamily: '"Trebuchet MS", "Verdana", sans-serif',
+      fontStyle: 'bold',
+      color: '#2a241c'
+    }).setOrigin(0.5);
+
+    const draw = (tone: 'idle' | 'hover' | 'pressed'): void => {
+      const palette =
+        tone === 'pressed'
+          ? { fill: 0xc9b89a, border: 0x14b8a6, scale: 0.97 }
+          : tone === 'hover'
+            ? { fill: 0xf2e6d4, border: 0x22d3ee, scale: 1.02 }
+            : { fill: 0xe8d4b8, border: 0x22d3ee, scale: 1 };
+
+      shadow.clear();
+      shadow.fillStyle(0x0d0805, 0.22);
+      shadow.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2 + 4, buttonWidth, buttonHeight, 20);
+
+      background.clear();
+      background.fillStyle(palette.fill, 1);
+      background.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 20);
+      background.lineStyle(3, palette.border, 1);
+      background.strokeRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 20);
+
+      text.setScale(palette.scale);
+    };
+
+    const padX = 48;
+    const padY = 28;
+    const hitTarget = this.add.rectangle(0, 0, buttonWidth + padX, buttonHeight + padY, 0x000000, 0);
+    hitTarget.setInteractive();
+
+    container.add([shadow, background, text, hitTarget]);
+    draw('idle');
+
+    return {
+      container,
+      hitTarget,
+      setIdleState: () => draw('idle'),
+      setHoverState: () => draw('hover'),
+      setPressedState: () => draw('pressed')
+    };
   }
 
   private handleLevelFailure(data: any): void {
@@ -2711,6 +3666,7 @@ export class EnhancedGame extends Scene {
 
   // FIXED: Separate graphics layers for efficient rendering
   private boardGraphics!: Phaser.GameObjects.Graphics; // Static placed blocks
+  private ghostGraphics!: Phaser.GameObjects.Graphics; // Ghost piece
   private pieceGraphics!: Phaser.GameObjects.Graphics; // Moving piece only
   private uiGraphics!: Phaser.GameObjects.Graphics; // UI elements
   private boardDirty: boolean = true; // Flag to know when to redraw board
@@ -2731,8 +3687,12 @@ export class EnhancedGame extends Scene {
       this.boardGraphics.setDepth(10);
       this.gameContainer.add(this.boardGraphics);
       
+      this.ghostGraphics = this.add.graphics();
+      this.ghostGraphics.setDepth(10.5); // Between board and active piece
+      this.gameContainer.add(this.ghostGraphics);
+      
       this.pieceGraphics = this.add.graphics();
-      this.pieceGraphics.setDepth(11); // Above board
+      this.pieceGraphics.setDepth(11); // Above ghost piece
       this.gameContainer.add(this.pieceGraphics);
       
       this.uiGraphics = this.add.graphics();
@@ -2741,6 +3701,7 @@ export class EnhancedGame extends Scene {
       
       console.log('✅ Graphics layers initialized:', {
         boardGraphics: !!this.boardGraphics,
+        ghostGraphics: !!this.ghostGraphics,
         pieceGraphics: !!this.pieceGraphics,
         uiGraphics: !!this.uiGraphics
       });
@@ -2782,6 +3743,9 @@ export class EnhancedGame extends Scene {
     // Update UI with environmental information
     this.updateEnvironmentalUI();
     
+    // Update game UI (score, level, lines)
+    this.updateGameUI(state);
+    
     // Use dynamic board positioning
     const boardX = this.boardX;
     const boardY = this.boardY;
@@ -2807,9 +3771,31 @@ export class EnhancedGame extends Scene {
     }
     
     // FIXED: Always redraw the falling piece (clear and redraw)
+    if (this.ghostGraphics && this.ghostGraphics.active) {
+      this.ghostGraphics.clear();
+    }
     this.pieceGraphics.clear();
     if (state.currentPiece) {
       const piece = state.currentPiece;
+      
+      // Ghost piece (landing position)
+      const ghostPiece = this.getGhostPiece(piece, state.board);
+      if (ghostPiece && this.ghostGraphics) {
+        for (let y = 0; y < ghostPiece.shape.length; y++) {
+          for (let x = 0; x < ghostPiece.shape[y].length; x++) {
+            if (ghostPiece.shape[y][x] !== 0) {
+              this.drawGhostBlock(
+                this.ghostGraphics,
+                boardX + (ghostPiece.x + x) * blockSize,
+                boardY + (ghostPiece.y + y) * blockSize,
+                blockSize
+              );
+            }
+          }
+        }
+      }
+      
+      // Active falling piece
       for (let y = 0; y < piece.shape.length; y++) {
         for (let x = 0; x < piece.shape[y].length; x++) {
           if (piece.shape[y][x] !== 0) {
@@ -2840,7 +3826,7 @@ export class EnhancedGame extends Scene {
     const isGracePeriodActive = this.waterLevelManager.isGracePeriodActive();
     
     // Create or update water level display
-    if (!this.waterLevelText) {
+    if (this.showEnvironmentalText && !this.waterLevelText) {
       this.waterLevelText = this.add.text(50, 50, '', {
         fontSize: '16px',
         color: '#00FFFF',
@@ -2852,20 +3838,24 @@ export class EnhancedGame extends Scene {
     }
     
     // Update water level text
-    const waterPercentage = Math.floor(waterLevel * 100);
-    this.waterLevelText.setText(`🌊 Water Level: ${waterPercentage}%`);
-    
-    // Change color based on danger level
-    if (waterPercentage > 80) {
-      this.waterLevelText.setColor('#FF4444'); // Red for danger
-    } else if (waterPercentage > 60) {
-      this.waterLevelText.setColor('#FFAA00'); // Orange for warning
-    } else {
-      this.waterLevelText.setColor('#00FFFF'); // Cyan for normal
+    if (this.showEnvironmentalText && this.waterLevelText) {
+      const waterPercentage = Math.floor(waterLevel * 100);
+      this.waterLevelText.setText(`🌊 Water Level: ${waterPercentage}%`);
+      
+      // Change color based on danger level
+      if (waterPercentage > 80) {
+        this.waterLevelText.setColor('#FF4444'); // Red for danger
+      } else if (waterPercentage > 60) {
+        this.waterLevelText.setColor('#FFAA00'); // Orange for warning
+      } else {
+        this.waterLevelText.setColor('#00FFFF'); // Cyan for normal
+      }
+    } else if (this.waterLevelText) {
+      this.waterLevelText.setVisible(false);
     }
     
     // Create or update season display
-    if (!this.seasonText) {
+    if (this.showEnvironmentalText && !this.seasonText) {
       this.seasonText = this.add.text(50, 80, '', {
         fontSize: '14px',
         color: '#FFFFFF',
@@ -2877,11 +3867,15 @@ export class EnhancedGame extends Scene {
     }
     
     // Update season text with emoji
-    const seasonEmoji = this.getSeasonEmoji(currentLevel.season);
-    this.seasonText.setText(`${seasonEmoji} ${currentLevel.name} - ${currentLevel.season.toUpperCase()}`);
-    
-    // Update season text color based on season
-    this.seasonText.setColor(this.getSeasonColor(currentLevel.season));
+    if (this.showEnvironmentalText && this.seasonText) {
+      const seasonEmoji = this.getSeasonEmoji(currentLevel.season);
+      this.seasonText.setText(`${seasonEmoji} ${currentLevel.name} - ${currentLevel.season.toUpperCase()}`);
+      
+      // Update season text color based on season
+      this.seasonText.setColor(this.getSeasonColor(currentLevel.season));
+    } else if (this.seasonText) {
+      this.seasonText.setVisible(false);
+    }
     
     // Update futuristic timer
     if (isGracePeriodActive && gracePeriodRemaining > 0) {
@@ -2928,15 +3922,22 @@ export class EnhancedGame extends Scene {
     
     const { width } = this.scale;
     const isMobile = width < 600;
-    const previewBlockSize = isMobile ? 12 : 15; // Smaller blocks for preview
-    
     const piece = state.nextPiece;
     
+    const cols = piece.shape[0].length;
+    const rows = piece.shape.length;
+    const areaWidth = this.nextPieceAreaWidth || (isMobile ? 80 : 90);
+    const areaHeight = this.nextPieceAreaHeight || (isMobile ? 40 : 50);
+    
+    // Scale preview blocks to fill the box while still fitting all shapes
+    const minBlockSize = isMobile ? 12 : 14;
+    const maxBlockSize = isMobile ? 16 : 20;
+    const fitBlockSize = Math.floor(Math.min(areaWidth / cols, areaHeight / rows));
+    const previewBlockSize = Math.max(minBlockSize, Math.min(maxBlockSize, fitBlockSize));
+    
     // Calculate centering offset
-    const pieceWidth = piece.shape[0].length * previewBlockSize;
-    const pieceHeight = piece.shape.length * previewBlockSize;
-    const areaWidth = isMobile ? 80 : 90;
-    const areaHeight = isMobile ? 40 : 50;
+    const pieceWidth = cols * previewBlockSize;
+    const pieceHeight = rows * previewBlockSize;
     const offsetX = (areaWidth - pieceWidth) / 2;
     const offsetY = (areaHeight - pieceHeight) / 2;
     
@@ -2983,63 +3984,83 @@ export class EnhancedGame extends Scene {
     
     const padding = 2;
     const innerSize = size - padding * 2;
+    const bevelSize = Math.min(4, Math.max(3, Math.floor(size * 0.15)));
     
-    // Shadow/depth effect (bottom-right)
-    graphics.fillStyle(darkColor, 0.8);
-    graphics.fillRect(x + padding + 2, y + padding + 2, innerSize, innerSize);
+    // Subtle shadow underneath falling pieces (4px offset, 60% opacity)
+    if (type === 'falling') {
+      graphics.fillStyle(0x000000, 0.6);
+      graphics.fillRect(x + 4, y + 4, size, size);
+    }
     
-    // Main block body with gradient effect
+    // Main block body
     graphics.fillStyle(baseColor);
     graphics.fillRect(x + padding, y + padding, innerSize, innerSize);
     
-    // Stronger highlights for 3D effect
-    graphics.fillStyle(lightColor, 0.8);
-    graphics.fillRect(x + padding, y + padding, innerSize, 4); // Top - 4px thick
-    graphics.fillRect(x + padding, y + padding, 4, innerSize); // Left - 4px thick
+    // Gradient fill overlay (top 20% lighter, bottom 20% darker)
+    const topShade = Math.max(2, Math.floor(innerSize * 0.2));
+    const bottomShade = Math.max(2, Math.floor(innerSize * 0.2));
+    graphics.fillStyle(0xC8956A, 0.9); // lighter top
+    graphics.fillRect(x + padding, y + padding, innerSize, topShade);
+    graphics.fillStyle(0x8B6239, 0.9); // darker bottom
+    graphics.fillRect(x + padding, y + padding + innerSize - bottomShade, innerSize, bottomShade);
     
-    // Stronger shadows for depth
-    graphics.fillStyle(darkColor, 0.7);
-    graphics.fillRect(x + size - padding - 4, y + padding + 2, 4, innerSize - 2); // Right - 4px
-    graphics.fillRect(x + padding + 2, y + size - padding - 4, innerSize - 2, 4); // Bottom - 4px
+    // Beveled edges: highlight top/left, shadow bottom/right
+    graphics.fillStyle(0xC8956A, 0.9);
+    graphics.fillRect(x + padding, y + padding, innerSize, bevelSize); // Top bevel
+    graphics.fillRect(x + padding, y + padding, bevelSize, innerSize); // Left bevel
     
-    // Wood grain texture (subtle lines)
+    graphics.fillStyle(0x8B6239, 0.9);
+    graphics.fillRect(x + padding + innerSize - bevelSize, y + padding, bevelSize, innerSize); // Right bevel
+    graphics.fillRect(x + padding, y + padding + innerSize - bevelSize, innerSize, bevelSize); // Bottom bevel
+    
+    // Specular highlight (2x2 px white dot at 60% opacity)
+    graphics.fillStyle(0xFFFFFF, 0.6);
+    graphics.fillRect(x + padding + 2, y + padding + 2, 2, 2);
+    
+    // Texture overlay (wood grain / stone) at 30% opacity
     if (size > 15) {
-      graphics.lineStyle(1, darkColor, 0.3);
+      graphics.lineStyle(1, 0x8B6B45, 0.3);
       const grainLines = type === 'preview' ? 2 : 3;
       for (let i = 0; i < grainLines; i++) {
         const lineY = y + padding + (innerSize / (grainLines + 1)) * (i + 1);
-        graphics.lineBetween(x + padding + 2, lineY, x + size - padding - 2, lineY);
+        graphics.moveTo(x + padding + 2, lineY);
+        graphics.lineTo(x + size - padding - 2, lineY + (i % 2 === 0 ? 1 : -1));
       }
+      graphics.strokePath();
     }
     
-    // Outer glow/border
-    if (type === 'falling') {
-      // Enhanced falling piece with softer glow
-      graphics.lineStyle(3, glowColor, 0.3); // Outer soft glow
-      graphics.strokeRect(x, y, size, size);
-      
-      graphics.lineStyle(2, glowColor, 0.6); // Main border
+    // Border definition (1px dark outline)
+    graphics.lineStyle(1, 0x5C3D1F, 1);
+    graphics.strokeRect(x + padding, y + padding, innerSize, innerSize);
+    
+    // Subtle glow retained for preview pieces only
+    if (type === 'preview') {
+      graphics.lineStyle(1, glowColor, 0.35);
       graphics.strokeRect(x + 1, y + 1, size - 2, size - 2);
-      
-      graphics.lineStyle(1, glowColor, 0.4); // Inner accent
-      graphics.strokeRect(x + padding + 1, y + padding + 1, innerSize - 2, innerSize - 2);
-      
-      // Subtle corner highlights for elevated appearance
-      graphics.fillStyle(glowColor, 0.15);
-      graphics.fillRect(x + 1, y + 1, 2, 2); // Top-left corner
-      graphics.fillRect(x + size - 3, y + 1, 2, 2); // Top-right corner
-    } else if (type === 'preview') {
-      // Subtle glow for preview pieces
-      graphics.lineStyle(2, glowColor, 0.5);
-      graphics.strokeRect(x + 1, y + 1, size - 2, size - 2);
-      
-      graphics.lineStyle(1, glowColor, 0.3);
-      graphics.strokeRect(x + padding, y + padding, innerSize, innerSize);
-    } else {
-      // Subtle border for placed blocks
-      graphics.lineStyle(1, glowColor, 0.3);
-      graphics.strokeRect(x + padding, y + padding, innerSize, innerSize);
     }
+  }
+
+  private getGhostPiece(piece: GamePiece, board: number[][]): GamePiece | null {
+    let testPiece = { ...piece };
+    let dropDistance = 0;
+    
+    while (!this.pieceManager.checkCollision(testPiece, board)) {
+      dropDistance++;
+      testPiece = this.pieceManager.movePiece(testPiece, 0, 1);
+    }
+    
+    if (dropDistance <= 1) {
+      return piece;
+    }
+    
+    return this.pieceManager.movePiece(piece, 0, dropDistance - 1);
+  }
+
+  private drawGhostBlock(graphics: Phaser.GameObjects.Graphics, x: number, y: number, size: number): void {
+    graphics.fillStyle(0xFFFFFF, 0.25);
+    graphics.fillRect(x + 1, y + 1, size - 2, size - 2);
+    graphics.lineStyle(1, 0xFFFFFF, 0.8);
+    graphics.strokeRect(x + 1, y + 1, size - 2, size - 2);
   }
 
   private createWoodBlock(x: number, y: number, size: number, type: 'placed' | 'falling' | 'preview'): void {

@@ -2,6 +2,8 @@ import { GamePiece, PieceType, PieceDefinition } from '../types/GameTypes';
 
 export class PieceManager {
   private readonly pieceDefinitions: Record<PieceType, PieceDefinition>;
+  private pieceBag: PieceType[] = [];
+  private lastPieceType: PieceType | null = null;
 
   constructor() {
     this.pieceDefinitions = this.initializePieceDefinitions();
@@ -83,9 +85,29 @@ export class PieceManager {
   }
 
   public createRandomPiece(): GamePiece {
+    if (this.pieceBag.length === 0) {
+      this.refillPieceBag();
+    }
+    
+    const nextType = this.pieceBag.shift() as PieceType;
+    this.lastPieceType = nextType;
+    return this.createPiece(nextType);
+  }
+
+  private refillPieceBag(): void {
     const pieceTypes = Object.values(PieceType);
-    const randomType = pieceTypes[Math.floor(Math.random() * pieceTypes.length)] as PieceType;
-    return this.createPiece(randomType);
+    // Fisher-Yates shuffle
+    for (let i = pieceTypes.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pieceTypes[i], pieceTypes[j]] = [pieceTypes[j], pieceTypes[i]];
+    }
+    
+    // Avoid repeating the last piece across bag boundaries when possible
+    if (this.lastPieceType && pieceTypes.length > 1 && pieceTypes[0] === this.lastPieceType) {
+      [pieceTypes[0], pieceTypes[1]] = [pieceTypes[1], pieceTypes[0]];
+    }
+    
+    this.pieceBag = pieceTypes;
   }
 
   public createPiece(type: PieceType, x: number = 0, y: number = 0): GamePiece {

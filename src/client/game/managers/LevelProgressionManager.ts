@@ -135,9 +135,12 @@ export class LevelProgressionManager {
     // Reset water level
     this.waterLevelManager.reset();
     
-    // Set water rise rate based on level
+    // Set water rise rate and grace period based on level
     const seasonalLevel = this.seasonalManager.getCurrentLevel();
     this.waterLevelManager.setRiseRate(seasonalLevel.waterRiseRate);
+    if (seasonalLevel.gracePeriod !== undefined) {
+      this.waterLevelManager.setGracePeriod(seasonalLevel.gracePeriod);
+    }
 
     // Notify listeners
     this.notifyListeners(progress);

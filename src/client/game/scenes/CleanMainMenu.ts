@@ -165,7 +165,7 @@ export class CleanMainMenu extends Scene {
     campaignBg.lineStyle(3, 0x00FFFF, 1);
     campaignBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 12);
 
-    const campaignText = this.add.text(0, 0, '🌊 CAMPAIGN MODE', {
+    const campaignText = this.add.text(0, 0, '🌊 DAM QUEST', {
       fontFamily: 'Arial Black',
       fontSize: this.getResponsiveFontSize(20, 16, 14),
       color: '#00FFFF',
@@ -294,7 +294,7 @@ export class CleanMainMenu extends Scene {
 
     // Controls text
     this.instructionsText = this.add.text(width / 2, panelY + panelHeight * 0.65, 
-      'SPACE: Campaign • C: Classic • L: Leaderboard\n← → ↓: Move • ↑: Rotate • SPACE: Fast Drop', {
+      'SPACE: Dam Quest • C: Classic • L: Leaderboard\n← → ↓: Move • ↑: Rotate • SPACE: Fast Drop', {
       fontFamily: 'Arial',
       fontSize: this.getResponsiveFontSize(14, 12, 10),
       color: '#FFFF00',

@@ -10,7 +10,7 @@ export const createPost = async () => {
     splash: {
       appDisplayName: 'dam-attack',
       backgroundUri: 'splash-background.png',
-      appIconUri: 'app-icon.png',
+      appIconUri: 'beaverlogo.png',
       heading: 'Welcome to DAM ATTACK!',
       description: 'Help the beaver build its dam! Challenge yourself to get on the leaderboard.',
       buttonLabel: 'Start Building!'
